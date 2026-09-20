@@ -1,122 +1,78 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
+import { useFinanceState } from './hooks/useFinanceState'
+import { Disclaimer } from './components/ui/Primitives.jsx'
+import Sidebar from './components/nav/Sidebar.jsx'
+import TopBar from './components/nav/TopBar.jsx'
+import MobileMenu from './components/nav/MobileMenu.jsx'
+import BottomNav from './components/nav/BottomNav.jsx'
+import GhostAssistant from './components/GhostAssistant.jsx'
+import { NAV_ITEMS } from './components/nav/navItems.js'
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function initialViewId() {
+  const hash = window.location.hash.replace('#', '')
+  return NAV_ITEMS.some((item) => item.id === hash) ? hash : 'dashboard'
 }
 
-export default App
+export default function App() {
+  const [activeId, setActiveId] = useState(initialViewId)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [ghostOpen, setGhostOpen] = useState(false)
+  const finance = useFinanceState()
+
+  const navigate = useCallback((id) => {
+    setActiveId(id)
+    window.location.hash = id
+    window.scrollTo({ top: 0 })
+  }, [])
+
+  // Browser back/forward support
+  useEffect(() => {
+    const onHashChange = () => setActiveId(initialViewId())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  const active = NAV_ITEMS.find((item) => item.id === activeId) ?? NAV_ITEMS[0]
+  const ActiveView = active.View
+
+  return (
+    <div className="flex min-h-screen">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[var(--gfx-accent-strong)] focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[var(--gfx-accent-ink)]"
+      >
+        Skip to main content
+      </a>
+
+      <Sidebar activeId={activeId} onNavigate={navigate} />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar
+          activeId={activeId}
+          onNavigate={navigate}
+          onOpenMenu={() => setMenuOpen(true)}
+          onOpenGhost={() => setGhostOpen(true)}
+          onReset={finance.resetToDemoData}
+        />
+
+        <main id="main-content" key={activeId} className="gfx-enter mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <ActiveView finance={finance} onNavigate={navigate} />
+        </main>
+
+        <footer className="border-t border-[var(--gfx-border)] px-4 pb-24 pt-4 sm:px-6 lg:pb-4">
+          <Disclaimer>
+            GhostFinEx is a decision-support prototype. Every figure is calculated locally in your
+            browser from the values you enter — nothing here is financial advice, and demo data is
+            clearly labeled. Educate → Explain → Compare → Recommend options → You decide.
+          </Disclaimer>
+        </footer>
+
+        <BottomNav activeId={activeId} onNavigate={navigate} />
+      </div>
+
+      <MobileMenu open={menuOpen} onClose={() => setMenuOpen(false)} activeId={activeId} onNavigate={navigate} />
+      <GhostAssistant open={ghostOpen} onClose={() => setGhostOpen(false)} finance={finance} />
+    </div>
+  )
+}
