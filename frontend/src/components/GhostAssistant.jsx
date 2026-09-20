@@ -3,7 +3,7 @@ import { Button } from './ui/Primitives.jsx'
 import { IconGhost, IconSend, IconX } from './ui/icons.jsx'
 import { formatCurrency } from '../lib/format'
 import { buildInsights } from '../lib/insights'
-import { monthlySubscriptionCost, roundMoney } from '../lib/finance'
+import { monthlyNet, roundMoney, subscriptionBurden } from '../lib/finance'
 
 /**
  * Ghost assistant — the UI surface for decision support.
@@ -16,12 +16,12 @@ import { monthlySubscriptionCost, roundMoney } from '../lib/finance'
 const SUGGESTED_PROMPTS = [
   'How am I doing this month?',
   'What subscriptions could I cut?',
-  'How is my laptop goal tracking?',
   'Where is my money going?',
+  'Can I afford a big purchase?',
 ]
 
 export default function GhostAssistant({ open, onClose, finance }) {
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState(finance.ghostDemoConversation)
   const [draft, setDraft] = useState('')
   const listRef = useRef(null)
   const inputRef = useRef(null)
@@ -45,37 +45,37 @@ export default function GhostAssistant({ open, onClose, finance }) {
   }, [messages])
 
   const answer = (question) => {
-    const { profile, budgetLines, goals, subscriptions, totals } = finance
-    const freeIncome = roundMoney(profile.monthlyIncome - totals.spent)
+    const { profile, expenses, goals, subscriptions, overview } = finance
     const q = question.toLowerCase()
-    const insights = buildInsights({ profile, budgetLines, goals, subscriptions, totals })
+    const insights = buildInsights({ profile, expenses, goals, subscriptions, overview })
 
     if (q.includes('month') || q.includes('doing') || q.includes('how am i')) {
-      return `You have spent ${formatCurrency(totals.spent, { compact: true })} of your ${formatCurrency(totals.planned, { compact: true })} plan (${Math.round(totals.utilization * 100)}%). That leaves ${formatCurrency(freeIncome, { compact: true })} of free income this month. ${totals.overBudget ? 'You are over plan — worth a look at which categories drifted.' : 'You are still inside the plan.'}`
+      return `You have spent ${formatCurrency(overview.totalSpent, { compact: true })} of your ${formatCurrency(profile.monthlyBudget, { compact: true })} budget (${Math.round(overview.budgetUsed * 100)}%). Balance after expenses: ${formatCurrency(overview.remainingBalance, { compact: true })}. ${overview.overBudget ? 'You are over budget — the Spending view shows where it went.' : 'You are still inside your budget.'}`
     }
     if (q.includes('subscription') || q.includes('cut') || q.includes('cancel')) {
-      const lowUse = subscriptions.filter((s) => s.usesPerMonth <= 2)
-      if (lowUse.length === 0) return `All ${subscriptions.length} subscriptions show regular usage, so nothing stands out as an obvious cut. Total: ${formatCurrency(monthlySubscriptionCost(subscriptions), { compact: true })}/month.`
-      const freed = roundMoney(lowUse.reduce((sum, s) => sum + (s.billingCycle === 'yearly' ? s.amount / 12 : s.billingCycle === 'quarterly' ? s.amount / 3 : s.amount), 0))
-      return `${lowUse.map((s) => s.name).join(' and ')} ${lowUse.length === 1 ? 'is' : 'are'} used twice a month or less — about ${formatCurrency(freed, { compact: true })}/month or ${formatCurrency(roundMoney(freed * 12), { compact: true })}/year if cancelled. The Subscriptions view can simulate it before you decide.`
+      if (subscriptions.length === 0) return 'You have no subscriptions tracked yet — add some in the Subscriptions view and I can point out the heavy ones.'
+      const burden = subscriptionBurden(subscriptions, profile.monthlyIncome, profile.monthlyBudget)
+      const sorted = [...subscriptions].sort((a, b) => b.amount - a.amount)
+      return `Your subscriptions cost about ${formatCurrency(burden.monthly, { compact: true })}/month (${formatCurrency(burden.yearly, { compact: true })}/year) — ${Math.round(burden.shareOfIncome * 100)}% of income. The largest is "${sorted[0].name}" at ${formatCurrency(sorted[0].amount, { compact: true })} per ${sorted[0].billingCycle === 'monthly' ? 'month' : sorted[0].billingCycle === 'quarterly' ? 'quarter' : 'year'}. The What-if mode can simulate cancelling it before you decide.`
     }
-    if (q.includes('goal') || q.includes('laptop')) {
+    if (q.includes('goal')) {
+      if (goals.length === 0) return 'No goals yet — the Goals view can create one in a few taps.'
       const goal = goals.find((g) => q.includes(g.name.toLowerCase().split(' ')[0])) ?? goals[0]
-      if (!goal) return 'You have no goals yet — the Goals view can create one in a few taps.'
-      const weeks = Math.max(1, Math.ceil((new Date(goal.deadline) - new Date()) / (7 * 24 * 60 * 60 * 1000)))
-      const need = Math.max(0, Math.ceil((goal.target - goal.saved) / weeks * 100) / 100)
-      return `"${goal.name}" is ${Math.round((goal.saved / goal.target) * 100)}% funded: ${formatCurrency(goal.saved, { compact: true })} of ${formatCurrency(goal.target, { compact: true })}. To land on time, about ${formatCurrency(need, { compact: true })} per week for ${weeks} weeks. If that is too steep, pushing the deadline is a valid option.`
+      const gap = Math.max(0, goal.target - goal.saved)
+      const weeks = Math.max(1, Math.ceil((new Date(goal.targetDate) - new Date()) / (7 * 24 * 60 * 60 * 1000)))
+      const need = roundMoney(gap / weeks)
+      return `"${goal.name}" is ${Math.round((goal.saved / goal.target) * 100)}% funded: ${formatCurrency(goal.saved, { compact: true })} of ${formatCurrency(goal.target, { compact: true })}. To land on time, about ${formatCurrency(need, { compact: true })} per week for ${weeks} weeks. If that is too steep, pushing the target date is a valid option.`
     }
-    if (q.includes('least') || q.includes('most spent') || q.includes('biggest')) {
-      const sorted = [...budgetLines].sort((a, b) => (q.includes('least') ? a.spent - b.spent : b.spent - a.spent))
-      const line = sorted[0]
-      return `Your ${q.includes('least') ? 'smallest' : 'biggest'} category is ${line.category} at ${formatCurrency(line.spent, { compact: true })} this month (${line.planned > 0 ? `${Math.round((line.spent / line.planned) * 100)}% of its ${formatCurrency(line.planned, { compact: true })} plan` : 'no plan set'}).`
+    if (q.includes('afford')) {
+      const net = monthlyNet(profile.monthlyIncome, profile.monthlyBudget)
+      return `Your balance is ${formatCurrency(profile.availableBalance, { compact: true })}, and your plan frees ${formatCurrency(net, { compact: true })} per month. The Can-I-Afford-This tool runs the exact numbers for any price — including what it does to your budget and savings pace.`
     }
     if (q.includes('where') || q.includes('going') || q.includes('spend')) {
-      const byCategory = {}
-      for (const line of budgetLines) byCategory[line.category] = line.spent
-      const top = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 3)
-      return `Your top three spending categories this month: ${top.map(([cat, val]) => `${cat} at ${formatCurrency(val, { compact: true })}`).join(', ')}. The Spending breakdown view has the full picture.`
+      if (expenses.length === 0) return 'No expenses logged yet, so I cannot break down spending. Add some in the Expenses view.'
+      const map = new Map()
+      for (const e of expenses) map.set(e.category, roundMoney((map.get(e.category) ?? 0) + e.amount))
+      const top = [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+      return `Your top three spending categories: ${top.map(([cat, val]) => `${cat} at ${formatCurrency(val, { compact: true })}`).join(', ')}. The Spending breakdown view has the full picture.`
     }
     return `Here is what stands out right now: ${insights[0].title.toLowerCase()} — ${insights[0].detail} (All answers are computed from your own entries — no AI model, no data leaves your browser.)`
   }
@@ -104,7 +104,7 @@ export default function GhostAssistant({ open, onClose, finance }) {
             </span>
             <div>
               <p className="text-sm font-semibold text-[var(--gfx-text)]">Ghost</p>
-              <p className="text-[11px] text-[var(--gfx-faint)]">Rule-based guidance from your own numbers</p>
+              <p className="text-[11px] text-[var(--gfx-faint)]">Prototype — rule-based, from your own numbers</p>
             </div>
           </div>
           <button
@@ -141,20 +141,18 @@ export default function GhostAssistant({ open, onClose, finance }) {
           ))}
         </div>
 
-        {messages.length === 0 && (
-          <div className="flex flex-wrap gap-2 px-4 pb-3">
-            {SUGGESTED_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => send(prompt)}
-                className="rounded-full border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3 py-1.5 text-xs text-[var(--gfx-muted)] transition-colors hover:border-[var(--gfx-accent-strong)] hover:text-[var(--gfx-text)]"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2 px-4 pb-3">
+          {SUGGESTED_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => send(prompt)}
+              className="rounded-full border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3 py-1.5 text-xs text-[var(--gfx-muted)] transition-colors hover:border-[var(--gfx-accent-strong)] hover:text-[var(--gfx-text)]"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
 
         <form
           className="flex items-center gap-2 border-t border-[var(--gfx-border)] px-4 py-3"

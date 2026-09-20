@@ -6,29 +6,58 @@
  * real user data. When a backend is introduced, these objects define the
  * shape the API will return and will be replaced by real queries.
  *
- * Mock seed values keep the prototype deterministic: the same numbers are
- * shown on every fresh load so calculations can be verified by hand.
+ * The demo seed is deterministic: the same numbers appear on every fresh
+ * load so every calculation can be verified by hand.
  */
+
+/* ------------------------------- profile -------------------------------- */
 
 export const DEMO_PROFILE = {
   displayName: 'Demo Student',
   currency: 'ZAR',
   monthlyIncome: 4200,
-  incomeSources: [
-    { id: 'src-parttime', label: 'Part-time job', monthlyAmount: 3200 },
-    { id: 'src-allowance', label: 'Family allowance', monthlyAmount: 700 },
-    { id: 'src-bursary', label: 'Bursary stipend', monthlyAmount: 300 },
-  ],
+  availableBalance: 2860,
+  monthlyBudget: 3800,
 }
 
-export const DEMO_BUDGET_LINES = [
-  { id: 'bud-rent', category: 'Rent & utilities', planned: 1800, spent: 1800 },
-  { id: 'bud-groceries', category: 'Groceries', planned: 1200, spent: 1130 },
-  { id: 'bud-transport', category: 'Transport', planned: 350, spent: 410 },
-  { id: 'bud-study', category: 'Study materials', planned: 250, spent: 120 },
-  { id: 'bud-fun', category: 'Social & entertainment', planned: 300, spent: 355 },
-  { id: 'bud-phone', category: 'Phone & data', planned: 200, spent: 199 },
+/* ------------------------------- expenses ------------------------------- */
+
+/** The seven fixed spending categories used across the app. */
+export const EXPENSE_CATEGORIES = [
+  'Food',
+  'Transport',
+  'Education',
+  'Entertainment',
+  'Shopping',
+  'Subscriptions',
+  'Other',
 ]
+
+/** Category accent tones used by badges and charts. */
+export const CATEGORY_TONES = {
+  Food: 'accent',
+  Transport: 'info',
+  Education: 'violet',
+  Entertainment: 'pink',
+  Shopping: 'warn',
+  Subscriptions: 'info',
+  Other: 'neutral',
+}
+
+export const DEMO_EXPENSES = [
+  { id: 'exp-001', name: 'Weekly groceries', amount: 460, category: 'Food', date: '2026-09-01' },
+  { id: 'exp-002', name: 'Airtime + data bundle', amount: 199, category: 'Subscriptions', date: '2026-09-02' },
+  { id: 'exp-003', name: 'Taxi fare top-up', amount: 120, category: 'Transport', date: '2026-09-04' },
+  { id: 'exp-004', name: 'Printing + stationery', amount: 185, category: 'Education', date: '2026-09-06' },
+  { id: 'exp-005', name: 'Fresh produce market', amount: 210, category: 'Food', date: '2026-09-08' },
+  { id: 'exp-006', name: 'Movie night', amount: 155, category: 'Entertainment', date: '2026-09-10' },
+  { id: 'exp-007', name: 'Concert ticket', amount: 200, category: 'Entertainment', date: '2026-09-12' },
+  { id: 'exp-008', name: 'Taxi fare top-up', amount: 110, category: 'Transport', date: '2026-09-13' },
+  { id: 'exp-009', name: 'Textbook (2nd hand)', amount: 450, category: 'Education', date: '2026-09-15' },
+  { id: 'exp-010', name: 'Winter jacket', amount: 750, category: 'Shopping', date: '2026-09-17' },
+]
+
+/* --------------------------------- goals --------------------------------- */
 
 export const DEMO_GOALS = [
   {
@@ -36,7 +65,7 @@ export const DEMO_GOALS = [
     name: 'Refurbished laptop',
     target: 9000,
     saved: 2400,
-    deadline: '2026-12-15',
+    targetDate: '2026-12-15',
     note: 'For 2nd-year programming courses.',
   },
   {
@@ -44,18 +73,20 @@ export const DEMO_GOALS = [
     name: 'Emergency buffer',
     target: 3000,
     saved: 1450,
-    deadline: '2027-02-28',
+    targetDate: '2027-02-28',
     note: 'One month of essentials as a safety net.',
   },
   {
-    id: 'goal-examtrip',
+    id: 'goal-trip',
     name: 'Travel home after exams',
     target: 1600,
     saved: 250,
-    deadline: '2026-11-30',
+    targetDate: '2026-11-30',
     note: 'Bus ticket plus spending money.',
   },
 ]
+
+/* ----------------------------- subscriptions ----------------------------- */
 
 export const DEMO_SUBSCRIPTIONS = [
   {
@@ -63,76 +94,115 @@ export const DEMO_SUBSCRIPTIONS = [
     name: 'Music streaming (student plan)',
     amount: 65,
     billingCycle: 'monthly',
-    usesPerMonth: 20,
-    lastUsed: '2026-09-18',
-    notes: '',
+    nextBillingDate: '2026-09-28',
   },
   {
     id: 'sub-video',
     name: 'Video streaming (shared)',
     amount: 199,
     billingCycle: 'monthly',
-    usesPerMonth: 6,
-    lastUsed: '2026-09-14',
-    notes: 'Shared with two flatmates.',
+    nextBillingDate: '2026-09-30',
   },
   {
     id: 'sub-cloud',
     name: 'Cloud storage 200GB',
     amount: 480,
     billingCycle: 'yearly',
-    usesPerMonth: 12,
-    lastUsed: '2026-09-19',
-    notes: 'Renews in January.',
+    nextBillingDate: '2027-01-12',
   },
   {
     id: 'sub-audiobook',
     name: 'Audiobook service',
     amount: 130,
     billingCycle: 'monthly',
-    usesPerMonth: 2,
-    lastUsed: '2026-06-30',
-    notes: 'Barely used since June.',
+    nextBillingDate: '2026-10-05',
   },
 ]
 
-export const DEMO_COMPARISON_OPTIONS = [
+/* --------------------------- planned expenses ----------------------------- */
+
+/** Upcoming expenses the user has scheduled but not yet paid. */
+export const DEMO_PLANNED_EXPENSES = [
   {
-    id: 'opt-laptop-a',
-    name: 'Refurb A — 16GB / 512GB',
-    purchasePrice: 9000,
-    warrantyMonths: 12,
-    pros: ['Full keyboard and screen coverage', 'Battery replaced'],
-    cons: ['Older chassis', 'Heavier'],
-    note: 'Certified refurbisher with 12-month warranty.',
+    id: 'plan-001',
+    name: 'Monthly rent',
+    amount: 1800,
+    category: 'Other',
+    date: '2026-10-01',
+    notes: 'Paid on the 1st each month.',
   },
   {
-    id: 'opt-laptop-b',
-    name: 'New B — 8GB / 256GB',
-    purchasePrice: 11500,
-    warrantyMonths: 24,
-    pros: ['Brand-new battery', 'Longer warranty'],
-    cons: ['Less RAM', 'Smaller storage'],
-    note: 'Retail price, no negotiation room.',
+    id: 'plan-002',
+    name: 'Study tour deposit',
+    amount: 500,
+    category: 'Education',
+    date: '2026-10-15',
+    notes: 'Deposit holds the spot; balance due in November.',
   },
   {
-    id: 'opt-laptop-c',
-    name: 'Campus loaner + saving',
-    purchasePrice: 0,
-    warrantyMonths: 0,
-    pros: ['No upfront cost', 'Keeps the emergency buffer growing'],
-    cons: ['Limited availability', 'Must return at year-end'],
-    note: 'Delay the purchase; keep saving monthly.',
+    id: 'plan-003',
+    name: 'Data bundle top-up',
+    amount: 199,
+    category: 'Subscriptions',
+    date: '2026-09-26',
+    notes: '',
   },
 ]
+
+/* ------------------------- smart shopping (demo) ------------------------- */
+
+/**
+ * Clearly-labeled demo product comparison data. These are NOT live search
+ * results — no store or price API is connected in this phase. Prices,
+ * ratings, and delivery estimates are illustrative examples only.
+ */
+export const DEMO_PRODUCTS = [
+  {
+    id: 'prod-001',
+    name: 'Refurb laptop — 16GB / 512GB',
+    store: 'Certified Refurb Co.',
+    price: 9000,
+    previousPrice: 10500,
+    rating: 4.5,
+    deliveryDays: 4,
+    note: '12-month warranty, battery replaced',
+  },
+  {
+    id: 'prod-002',
+    name: 'New laptop B — 8GB / 256GB',
+    store: 'Campus Electronics',
+    price: 11500,
+    previousPrice: 11500,
+    rating: 4.2,
+    deliveryDays: 2,
+    note: 'Full retail, 24-month warranty',
+  },
+  {
+    id: 'prod-003',
+    name: 'Refurb laptop — 8GB / 256GB',
+    store: 'StudentTech Market',
+    price: 7200,
+    previousPrice: 8400,
+    rating: 3.9,
+    deliveryDays: 7,
+    note: '6-month warranty, cosmetic wear',
+  },
+]
+
+export const DEMO_DEALS = [
+  { id: 'deal-001', store: 'Student Dice', title: 'Software bundle — 60% student discount', category: 'Software', endsInDays: 9 },
+  { id: 'deal-002', store: 'Vodashop', title: 'Data bundle promo — double data', category: 'Connectivity', endsInDays: 4 },
+  { id: 'deal-003', store: 'Campus print shop', title: 'Printing half-price Fridays', category: 'Study', endsInDays: 2 },
+]
+
+/* ----------------------------- learning hub ------------------------------ */
 
 export const DEMO_LESSONS = [
   {
-    id: 'lesson-budget',
-    title: 'Where does the money go?',
+    id: 'lesson-budgeting',
+    topic: 'Budgeting',
     minutes: 3,
-    summary:
-      'A budget is a plan you write before the month starts, not a diary you keep afterwards.',
+    summary: 'A budget is a plan you write before the month starts, not a diary you keep afterwards.',
     body: [
       'Start with income you can rely on. Variable income (tips, freelance gigs) is best treated as a bonus, not as rent money.',
       'List fixed costs first: rent, data, transport. They set the floor of your month.',
@@ -141,43 +211,116 @@ export const DEMO_LESSONS = [
     ],
   },
   {
-    id: 'lesson-subscriptions',
-    title: 'The subscription drift',
-    minutes: 2,
-    summary:
-      'Small monthly charges compound quietly. The fix is a routine, not willpower.',
-    body: [
-      'List every recurring charge and its monthly cost, normalized across billing cycles.',
-      'Compute cost per use: a R199 service used twice a month costs about R100 per session.',
-      'Cancel on a schedule — the last day of each month — so the decision is routine, not dramatic.',
-      'Pause before re-subscribing: a two-week gap tells you whether you actually missed it.',
-    ],
-  },
-  {
-    id: 'lesson-goals',
-    title: 'Goals that survive contact with real life',
+    id: 'lesson-saving',
+    topic: 'Saving',
     minutes: 3,
-    summary: 'A goal without a deadline and a weekly number is a wish.',
+    summary: 'Saving works when it is automatic. Willpower is a bad monthly plan.',
     body: [
-      'Name the target amount and the date. Both are required.',
-      'Divide the gap by the weeks remaining. That weekly number is the honest price of the goal.',
-      'Automate the transfer on the day money arrives — before spending decisions begin.',
-      'If the weekly number is impossible, change the date, not the habit.',
+      'Pay yourself first: move savings out on the day money arrives, before spending decisions begin.',
+      'Name your goals. "Save more" loses to "R900 laptop fund" every time.',
+      'Start small and consistent — R50 every week beats R400 once, eventually.',
+      'Keep savings slightly inconvenient: a separate account you do not carry a card for.',
     ],
   },
   {
-    id: 'lesson-credit',
-    title: 'Student loans without the fog',
-    minutes: 4,
-    summary: 'Interest is rent paid on borrowed time. Length and rate drive the total.',
+    id: 'lesson-emergency-funds',
+    topic: 'Emergency Funds',
+    minutes: 2,
+    summary: 'An emergency fund turns a crisis into an inconvenience.',
     body: [
-      'The monthly payment depends on three numbers: principal, rate, and term.',
-      'Shorter terms raise the payment but cut total interest sharply.',
-      'Even a small extra payment early on reduces the balance that future interest is charged on.',
-      'Always compare total cost of the loan, never the monthly payment alone.',
+      'Aim for one month of essentials first, then build toward three.',
+      'Essentials only: rent, food, transport, data. Not the lifestyle you enjoy at your best.',
+      'Keep it liquid — instant access, no lock-in, even if the interest is boring.',
+      'Refill it after you use it. An emergency fund is a buffer, not a one-time trophy.',
+    ],
+  },
+  {
+    id: 'lesson-inflation',
+    topic: 'Inflation',
+    minutes: 3,
+    summary: 'Inflation is the quiet tax that makes money under the mattress shrink.',
+    body: [
+      'At 6% inflation, R100 buys roughly R94 worth of goods a year from now.',
+      'Cash loses value over time; that is why "doing nothing" is also a financial decision.',
+      'Salaries, grants, and bursaries can lag inflation — worth noticing at renewal time.',
+      'For students, the best inflation fighter is usually skills: earning power grows faster than prices.',
+    ],
+  },
+  {
+    id: 'lesson-compound-interest',
+    topic: 'Compound Interest',
+    minutes: 4,
+    summary: 'Compounding is interest earning interest. Time is the main ingredient.',
+    body: [
+      'Simple interest pays on what you put in. Compound interest pays on everything so far.',
+      'R1,000 at 10% becomes R1,100 after a year — and R2,594 after ten, without adding a cent.',
+      'The same math works against you on debt: unpaid balances grow the same way.',
+      'This is why starting early matters more than starting big.',
+    ],
+  },
+  {
+    id: 'lesson-mutual-funds',
+    topic: 'Mutual Funds',
+    minutes: 3,
+    summary: 'A mutual fund pools money from many people to buy a spread of investments.',
+    body: [
+      'You buy units; a professional team manages what the fund owns.',
+      'Pooling means small amounts can own a slice of hundreds of companies.',
+      'Funds charge fees — check the total expense ratio, because fees compound too.',
+      'Funds range from cautious (bonds, cash) to aggressive (equities). Match the fund to your timeline.',
+    ],
+  },
+  {
+    id: 'lesson-sip',
+    topic: 'SIP Basics',
+    minutes: 3,
+    summary: 'A Systematic Investment Plan invests a fixed amount on a fixed schedule.',
+    body: [
+      'The same amount buys more units when prices are low, fewer when high — averaging your entry.',
+      'Automation removes the temptation to time the market.',
+      'Small, boring, repeated: R200 a month is a valid SIP.',
+      'The habit matters more than the amount when you are starting out.',
+    ],
+  },
+  {
+    id: 'lesson-stocks',
+    topic: 'Stocks',
+    minutes: 3,
+    summary: 'A stock is a small piece of ownership in a real business.',
+    body: [
+      'Share prices move with the business and with sentiment — short-term noise is normal.',
+      'You can win two ways: price growth and, for some companies, dividends.',
+      'Single stocks are concentrated risk; one company can fall hard and stay down.',
+      'Only invest money you will not need for years, and never borrowed money.',
+    ],
+  },
+  {
+    id: 'lesson-diversification',
+    topic: 'Diversification',
+    minutes: 2,
+    summary: 'Diversification means not betting everything on one outcome.',
+    body: [
+      'Spreading money across companies, sectors, and asset types softens any single failure.',
+      'A useful student analogy: enroll in more than one module\'s worth of plan B.',
+      'Funds and ETFs do the spreading for you — that is part of what their fees buy.',
+      'Diversification reduces risk, not work: still review what you own twice a year.',
+    ],
+  },
+  {
+    id: 'lesson-risk-return',
+    topic: 'Risk vs Return',
+    minutes: 3,
+    summary: 'Every extra percent of expected return comes with extra chance of loss.',
+    body: [
+      'Cash is safe and low-return. Stocks swing but historically return more over long periods.',
+      'If an offer promises high returns with no risk, the risk is being hidden from you.',
+      'Match risk to time: money needed next month belongs in cash; money needed in year five can ride waves.',
+      'Your risk appetite is personal — sleep matters more than squeezing the last percent.',
     ],
   },
 ]
+
+/* ---------------------------- static guidance ---------------------------- */
 
 /**
  * Decision-support "advisor" script. Rules are deterministic and clearly
@@ -188,74 +331,15 @@ export const DEMO_ADVISOR_TIPS = [
   'Compare at least two options before any purchase over one week of income.',
   'Cancel one unused subscription per month and redirect it to your active goal.',
   'Keep one month of essentials as a buffer before accelerating any goal.',
-  'Re-check your budget the day after big one-off expenses, not at month end.',
+  'Re-check your balance the day after big one-off expenses, not at month end.',
 ]
 
-/* ------------------------------------------------------------------ */
-/* Prototype ledger data (current month = September 2026)              */
-/* ------------------------------------------------------------------ */
-
-export const DEMO_EXPENSES = [
-  { id: 'exp-001', date: '2026-09-01', category: 'Rent & utilities', note: 'Flat rent', amount: 1800 },
-  { id: 'exp-002', date: '2026-09-02', category: 'Phone & data', note: 'Airtime + data bundle', amount: 199 },
-  { id: 'exp-003', date: '2026-09-04', category: 'Groceries', note: 'Weekly shop — Checkers', amount: 460 },
-  { id: 'exp-004', date: '2026-09-06', category: 'Transport', note: 'Taxi fare top-up', amount: 120 },
-  { id: 'exp-005', date: '2026-09-08', category: 'Groceries', note: 'Fresh produce market', amount: 210 },
-  { id: 'exp-006', date: '2026-09-10', category: 'Social & entertainment', note: 'Movie night', amount: 155 },
-  { id: 'exp-007', date: '2026-09-12', category: 'Study materials', note: 'Printing + stationery', amount: 120 },
-  { id: 'exp-008', date: '2026-09-13', category: 'Transport', note: 'Taxi fare top-up', amount: 110 },
-  { id: 'exp-009', date: '2026-09-15', category: 'Groceries', note: 'Weekly shop — PnP', amount: 460 },
-  { id: 'exp-010', date: '2026-09-17', category: 'Social & entertainment', note: 'Concert ticket', amount: 200 },
-]
-
-export const DEMO_ACTIVITY = [
-  { id: 'act-001', date: '2026-09-18', kind: 'goal', label: 'Deposit added to Refurbished laptop', detail: '+R 250', tone: 'accent' },
-  { id: 'act-002', date: '2026-09-15', kind: 'expense', label: 'Groceries — weekly shop', detail: 'R 460', tone: 'neutral' },
-  { id: 'act-003', date: '2026-09-14', kind: 'subscription', label: 'Video streaming payment', detail: 'R 199', tone: 'neutral' },
-  { id: 'act-004', date: '2026-09-12', kind: 'insight', label: 'Transport marked over plan', detail: 'R 60 over', tone: 'warn' },
-  { id: 'act-005', date: '2026-09-01', kind: 'budget', label: 'Budget plan created for September', detail: '6 categories', tone: 'info' },
-]
-
-export const DEMO_SHOPPING_ITEMS = [
-  {
-    id: 'shop-001',
-    name: 'Noise-cancelling study headphones',
-    category: 'Electronics',
-    currentPrice: 2499,
-    targetPrice: 1999,
-    store: 'Takealot',
-    notes: 'Wait for a month-end sale.',
-  },
-  {
-    id: 'shop-002',
-    name: 'Reference manager — textbooks',
-    category: 'Study',
-    currentPrice: 899,
-    targetPrice: 650,
-    store: 'Campus bookstore',
-    notes: 'Ask about student discount.',
-  },
-  {
-    id: 'shop-003',
-    name: 'Winter jacket',
-    category: 'Clothing',
-    currentPrice: 750,
-    targetPrice: 550,
-    store: 'Mr Price',
-    notes: '',
-  },
-]
-
-export const DEMO_DEALS = [
-  { id: 'deal-001', store: 'Student Dice', title: 'Software bundle — 60% student discount', category: 'Software', endsInDays: 9 },
-  { id: 'deal-002', store: 'Vodashop', title: 'Data bundle promo — double data', category: 'Connectivity', endsInDays: 4 },
-  { id: 'deal-003', store: 'Campus print shop', title: 'Printing half-price Fridays', category: 'Study', endsInDays: 2 },
-]
-
-/** Upcoming subscription renewals (demo mirrors subscription amounts). */
-export const DEMO_RENEWALS = [
-  { id: 'ren-001', date: '2026-09-28', name: 'Music streaming (student plan)', amount: 65 },
-  { id: 'ren-002', date: '2026-09-30', name: 'Video streaming (shared)', amount: 199 },
-  { id: 'ren-003', date: '2026-10-12', name: 'Cloud storage 200GB', amount: 480 },
-  { id: 'ren-004', date: '2026-10-05', name: 'Audiobook service', amount: 130 },
+/**
+ * Ghost assistant conversation starter — a clearly-labeled EXAMPLE exchange
+ * showing the interaction pattern. Not a live AI, not real conversation
+ * history. Ghost answers are rule-based and computed from local state at runtime.
+ */
+export const DEMO_GHOST_CONVERSATION = [
+  { id: 'demo-1', role: 'user', text: 'How am I doing this month?' },
+  { id: 'demo-2', role: 'ghost', text: 'This is an example exchange so you can see how I work. Ask me anything about your month and I will answer from your own numbers — no AI model involved.' },
 ]

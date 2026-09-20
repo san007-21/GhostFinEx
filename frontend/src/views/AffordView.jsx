@@ -1,57 +1,54 @@
 import { useMemo, useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import Card from '../components/ui/Card.jsx'
-import { Alert, Badge, Button, Disclaimer, NumberField, ProgressBar } from '../components/ui/Primitives.jsx'
-import { ProjectionLine } from '../components/charts/Charts.jsx'
-import { formatCurrency } from '../lib/format'
-import { remainingIncome, roundMoney, savingsPlan } from '../lib/finance'
+import { Alert, Badge, Disclaimer, NumberField, TextField } from '../components/ui/Primitives.jsx'
+import { formatCurrency, formatPercent } from '../lib/format'
+import { affordabilityAnalysis, roundMoney } from '../lib/finance'
 
 export default function AffordView({ finance, onNavigate }) {
-  const { profile, budgetLines, goals } = finance
+  const { profile, overview } = finance
 
   const [name, setName] = useState('')
-  const [price, setPrice] = useState(4500)
-  const [alreadySaved, setAlreadySaved] = useState(0)
-  const [monthlySaving, setMonthlySaving] = useState(0)
+  const [price, setPrice] = useState(0)
 
-  const freeIncome = remainingIncome(profile.monthlyIncome, budgetLines)
-  const plan = useMemo(
-    () => savingsPlan(price, alreadySaved, monthlySaving, freeIncome),
-    [price, alreadySaved, monthlySaving, freeIncome],
+  const analysis = useMemo(
+    () =>
+      affordabilityAnalysis({
+        price,
+        availableBalance: profile.availableBalance,
+        monthlyBudget: profile.monthlyBudget,
+        monthlyIncome: profile.monthlyIncome,
+      }),
+    [price, profile],
   )
 
-  const verdictTone = !plan.gap ? 'accent' : plan.monthsNeeded === null ? 'info' : plan.shareOfFreeIncome !== null && plan.shareOfFreeIncome > 1 ? 'danger' : plan.shareOfFreeIncome > 0.5 ? 'warn' : 'accent'
+  const tone = price <= 0 ? 'info' : analysis.fitsNow ? (analysis.shareOfBalance > 0.5 ? 'warn' : 'accent') : 'danger'
 
-  const projection = useMemo(() => {
-    if (plan.monthsNeeded === null || plan.monthsNeeded === 0) return null
-    const points = [alreadySaved]
-    let balance = alreadySaved
-    const capped = Math.min(plan.monthsNeeded, 24)
-    for (let i = 0; i < capped; i += 1) {
-      balance = roundMoney(balance + monthlySaving)
-      points.push(Math.min(balance, price))
+  const verdict = (() => {
+    if (price <= 0) return 'Enter a price to run the numbers.'
+    if (analysis.fitsNow) {
+      const share = formatPercent(analysis.shareOfBalance)
+      const balancePart = `Your balance of ${formatCurrency(profile.availableBalance)} covers the ${formatCurrency(price)} price, leaving ${formatCurrency(analysis.remainingAfterPurchase)}. That is ${share} of your balance.`
+      let budgetPart
+      if (analysis.budgetImpact.remainingAfter < 0) {
+        budgetPart = ` It would consume more than your entire ${formatCurrency(profile.monthlyBudget)} monthly budget, so other planned spending would need to move.`
+      } else if (analysis.budgetImpact.priceShare > 0.5) {
+        budgetPart = ` It takes ${formatPercent(analysis.budgetImpact.priceShare)} of your monthly budget — possible, but it squeezes everything else.`
+      } else {
+        budgetPart = ` It takes ${formatPercent(analysis.budgetImpact.priceShare)} of your monthly budget, leaving ${formatCurrency(analysis.budgetImpact.remainingAfter)} planned.`
+      }
+      let savingsPart
+      if (analysis.monthsOfSaving !== null && analysis.monthsOfSaving > 0) {
+        savingsPart = ` At your typical saving rate of ${formatCurrency(analysis.savingCapacity)}/month, this price equals ${analysis.monthsOfSaving === 1 ? 'one month' : `${analysis.monthsOfSaving} months`} of saving.`
+      } else {
+        savingsPart = ' Your current plan has no monthly saving capacity, so this would come entirely from existing balance.'
+      }
+      return balancePart + budgetPart + savingsPart
     }
-    return points
-  }, [plan, alreadySaved, monthlySaving, price])
-
-  // Deterministic "where could the money come from" options, ranked.
-  const sources = useMemo(() => {
-    const options = []
-    const unallocated = finance.unallocated
-    if (unallocated > 0) {
-      options.push({ label: 'Unallocated income', monthly: unallocated, route: '/budget', note: 'Income you have not planned yet' })
-    }
-    const lowUse = finance.subscriptions.filter((s) => s.usesPerMonth <= 2)
-    for (const sub of lowUse) {
-      options.push({
-        label: `Cancel: ${sub.name}`,
-        monthly: normalize(sub),
-        route: '/subscriptions',
-        note: 'Currently used twice a month or less',
-      })
-    }
-    return options.sort((a, b) => b.monthly - a.monthly)
-  }, [finance.unallocated, finance.subscriptions])
+    const shortfall = formatCurrency(Math.abs(analysis.remainingAfterPurchase))
+    const months = analysis.monthsOfSaving
+    return `Your balance does not cover this yet — you are ${shortfall} short. At your typical saving rate of ${formatCurrency(analysis.savingCapacity)}/month, you would need about ${months ?? 'more'} ${months === 1 ? 'month' : 'months'} of saving. The Goals and What-if views can help you plan it.`
+  })()
 
   return (
     <div>
@@ -61,119 +58,84 @@ export default function AffordView({ finance, onNavigate }) {
       />
 
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card title="The purchase" subtitle="Describe it and the math does the rest" className="lg:col-span-2">
+        <Card title="The purchase" subtitle="What is it, and what does it cost?" className="lg:col-span-2">
           <div className="space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-[var(--gfx-muted)]">What is it? (optional)</span>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Refurbished laptop"
-                className="w-full rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3 py-2 text-sm text-[var(--gfx-text)] placeholder:text-[var(--gfx-faint)] focus:border-[var(--gfx-accent-strong)] focus:outline-none"
-              />
-            </label>
+            <TextField label="Item name (optional)" value={name} onChange={setName} placeholder="e.g. Refurbished laptop" />
             <NumberField label="Price (R)" value={price} onChange={setPrice} step={100} prefix="R" />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <NumberField label="Already saved (R)" value={alreadySaved} onChange={setAlreadySaved} step={100} prefix="R" />
-              <NumberField label="Can save per month (R)" value={monthlySaving} onChange={setMonthlySaving} step={100} prefix="R" />
-            </div>
           </div>
-
           <div className="mt-5 rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-4">
-            <p className="text-xs text-[var(--gfx-faint)]">Free monthly income</p>
-            <p className="tabular text-xl font-semibold text-[var(--gfx-text)]">{formatCurrency(freeIncome)}</p>
+            <p className="text-xs text-[var(--gfx-faint)]">Current available balance</p>
+            <p className="tabular text-xl font-semibold text-[var(--gfx-text)]">{formatCurrency(profile.availableBalance)}</p>
             <p className="mt-1 text-xs text-[var(--gfx-faint)]">
-              Income − spending so far this month. Adjust spending in the{' '}
-              <button type="button" className="text-[var(--gfx-accent)] underline-offset-2 hover:underline" onClick={() => onNavigate('expenses')}>
-                Expenses view
+              Edit it in the{' '}
+              <button type="button" className="text-[var(--gfx-accent)] underline-offset-2 hover:underline" onClick={() => onNavigate('overview')}>
+                Financial overview
               </button>
-              .
+              . Monthly budget: {formatCurrency(profile.monthlyBudget, { compact: true })}.
             </p>
           </div>
         </Card>
 
         <div className="space-y-4 lg:col-span-3">
-          <Card title="Verdict" subtitle="Deterministic guardrail — guidance, not a rule">
+          <Card title="Result" subtitle="Deterministic arithmetic on your real numbers — not advice">
             <div className="flex flex-wrap items-center gap-3">
-              <Badge tone={verdictTone}>{plan.monthsNeeded === null ? 'Set a contribution' : plan.gap <= 0 ? 'Affordable now' : `${plan.monthsNeeded} month${plan.monthsNeeded === 1 ? '' : 's'} to save`}</Badge>
-              <p className="text-sm text-[var(--gfx-muted)]">{plan.verdict}</p>
+              <Badge tone={tone}>
+                {price <= 0 ? 'Waiting for input' : analysis.fitsNow ? 'Fits your balance' : 'Not covered by balance'}
+              </Badge>
+              {price > 0 && analysis.fitsNow && analysis.budgetImpact.priceShare > 0.5 && (
+                <Badge tone="warn">Squeezes the budget</Badge>
+              )}
             </div>
-            {plan.gap > 0 && plan.monthsNeeded !== null && (
-              <div className="mt-4">
-                <ProgressBar
-                  value={plan.shareOfFreeIncome ?? 1}
-                  tone={verdictTone === 'danger' ? 'danger' : verdictTone === 'warn' ? 'warn' : 'accent'}
-                  label={`Monthly contribution vs free income (${formatCurrency(freeIncome, { compact: true })})`}
-                />
+            <div className="tabular mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-3">
+                <p className="text-xs text-[var(--gfx-faint)]">Item price</p>
+                <p className="text-lg font-semibold text-[var(--gfx-text)]">{formatCurrency(analysis.price, { compact: true })}</p>
               </div>
-            )}
-            {projection && projection.length > 2 && (
-              <div className="mt-5">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--gfx-muted)]">
-                  Path to {formatCurrency(price, { compact: true })}
+              <div className="rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-3">
+                <p className="text-xs text-[var(--gfx-faint)]">Balance after purchase</p>
+                <p className={`text-lg font-semibold ${analysis.remainingAfterPurchase < 0 ? 'text-[var(--gfx-danger)]' : 'text-[var(--gfx-accent)]'}`}>
+                  {formatCurrency(analysis.remainingAfterPurchase, { compact: true })}
                 </p>
-                <ProjectionLine points={projection} tone="accent" />
               </div>
-            )}
-            <p className="mt-4 text-xs text-[var(--gfx-faint)]">
-              {plan.gap > 0
-                ? `Gap to close: ${formatCurrency(plan.gap)}. ${plan.monthsNeeded !== null ? `${formatCurrency(monthlySaving)} per month for ${plan.monthsNeeded} months.` : ''}`
-                : 'You already have enough saved for this purchase.'}
-            </p>
+              <div className="rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-3">
+                <p className="text-xs text-[var(--gfx-faint)]">Budget after purchase</p>
+                <p className={`text-lg font-semibold ${analysis.budgetImpact.remainingAfter < 0 ? 'text-[var(--gfx-danger)]' : 'text-[var(--gfx-text)]'}`}>
+                  {formatCurrency(analysis.budgetImpact.remainingAfter, { compact: true })}
+                </p>
+              </div>
+            </div>
+            <p className="mt-4 text-sm leading-relaxed text-[var(--gfx-muted)]">{verdict}</p>
           </Card>
 
-          <Card title="Where the money could come from" subtitle="Ranked options — you choose">
-            {sources.length === 0 ? (
-              <p className="text-sm text-[var(--gfx-muted)]">
-                No obvious sources right now. Cutting spending or moving a deadline are also valid levers.
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {sources.slice(0, 4).map((source) => {
-                  const covers = monthlySaving > 0 && source.monthly >= monthlySaving
-                  return (
-                    <li key={source.label} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-[var(--gfx-text)]">{source.label}</p>
-                        <p className="text-xs text-[var(--gfx-faint)]">{source.note}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="tabular text-sm text-[var(--gfx-accent)]">+{formatCurrency(source.monthly, { compact: true })}/mo</span>
-                        <Button variant="secondary" size="sm" onClick={() => onNavigate(source.route.replace('/', ''))}>
-                          Review
-                        </Button>
-                        {covers && <Badge tone="accent">Covers it</Badge>}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </Card>
-
-          {goals.length > 0 && (
-            <Alert tone="info" title="Goal interaction check">
-              {goals.map((goal) => `${goal.name}: ${formatCurrency(goal.saved, { compact: true })} of ${formatCurrency(goal.target, { compact: true })}`).join(' · ')}
-              . If this purchase delays a goal, moving its deadline is a legitimate choice — make it consciously.
+          {price > 0 && !analysis.fitsNow && overview.savingsThisMonth > 0 && (
+            <Alert tone="info" title="A savings plan could close the gap">
+              You are {formatCurrency(Math.abs(analysis.remainingAfterPurchase), { compact: true })} short. If you saved your full{' '}
+              {formatCurrency(overview.savingsThisMonth, { compact: true })} of unspent income this month toward it, the gap would
+              close — see the{' '}
+              <button type="button" className="font-medium text-[var(--gfx-accent)] underline-offset-2 hover:underline" onClick={() => onNavigate('goals')}>
+                Goals view
+              </button>{' '}
+              to plan it properly.
             </Alert>
           )}
+
+          <Card title="How this is calculated" subtitle="Every formula, in the open">
+            <ul className="space-y-2 text-sm text-[var(--gfx-muted)]">
+              <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Remaining balance = available balance − item price</li>
+              <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Budget impact = monthly budget − item price (what is left for everything else)</li>
+              <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Savings impact = item price ÷ (monthly income − monthly budget), when positive</li>
+            </ul>
+          </Card>
         </div>
       </div>
 
       <div className="mt-6">
         <Disclaimer>
-          This tool runs deterministic arithmetic on your entries. A "fits" verdict means the monthly
-          contribution stays within your free monthly income — it is a conservative guide, not
-          permission, and not financial advice.
+          {roundMoney(0) === 0
+            ? 'This tool runs deterministic arithmetic on your entries. A "fits" result means the numbers allow it — it is not permission, and nothing here is financial advice. The decision stays yours.'
+            : ''}
         </Disclaimer>
       </div>
     </div>
   )
-}
-
-function normalize(sub) {
-  if (sub.billingCycle === 'yearly') return roundMoney(sub.amount / 12)
-  if (sub.billingCycle === 'quarterly') return roundMoney(sub.amount / 3)
-  return roundMoney(sub.amount)
 }

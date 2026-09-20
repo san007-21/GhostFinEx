@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const GFX_STORAGE_PREFIX = 'ghostfinex.v1.'
+const GFX_STORAGE_PREFIX = 'ghostfinex.'
 
 /**
  * useState synced to localStorage so the prototype survives reloads.

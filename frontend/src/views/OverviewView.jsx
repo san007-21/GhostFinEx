@@ -1,158 +1,128 @@
-import { useMemo } from 'react'
+import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import Card from '../components/ui/Card.jsx'
-import { Badge, Disclaimer, ProgressBar, StatCard } from '../components/ui/Primitives.jsx'
+import { ConfirmDialog } from '../components/ui/Modal.jsx'
+import { Badge, Button, Disclaimer, NumberField, StatCard } from '../components/ui/Primitives.jsx'
 import { MonthlyColumns } from '../components/charts/Charts.jsx'
-import { formatCurrency, formatDate, formatPercent } from '../lib/format'
-import {
-  monthlySubscriptionCost,
-  progressToward,
-  remainingIncome,
-  roundMoney,
-  weeklyAmountNeeded,
-  weeksUntil,
-  yearlySubscriptionCost,
-} from '../lib/finance'
+import { formatCurrency, formatPercent } from '../lib/format'
+import { expensesInMonth } from '../lib/finance'
 import { recentMonths } from '../lib/calendar'
 
-
 export default function OverviewView({ finance }) {
-  const { profile, budgetLines, goals, subscriptions, expenses, totals } = finance
+  const { profile, expenses, overview, setIncome, setBalance, setBudget } = finance
+  const [confirmingReset, setConfirmingReset] = useState(false)
 
-  const budgetRemaining = remainingIncome(profile.monthlyIncome, budgetLines)
-  const subsMonthly = monthlySubscriptionCost(subscriptions)
-  const subsYearly = yearlySubscriptionCost(subscriptions)
-
-  // Deterministic demo trend: current month from the ledger, prior months
-  // derived from plan (mock history, clearly part of the demo seed).
-  const months = useMemo(() => recentMonths(6), [])
-  const thisMonthKey = `${months[months.length - 1].year}-${months[months.length - 1].month}`
-  const spendByMonth = useMemo(() => {
-    const map = new Map()
-    for (const e of expenses) {
-      const key = `${new Date(e.date).getFullYear()}-${new Date(e.date).getMonth() + 1}`
-      map.set(key, roundMoneySafe((map.get(key) ?? 0) + e.amount))
-    }
-    return map
-  }, [expenses])
+  const monthExpenses = expensesInMonth(expenses)
+  const months = recentMonths(6)
+  const spendByMonth = new Map()
+  for (const e of expenses) {
+    const key = `${new Date(e.date).getFullYear()}-${new Date(e.date).getMonth() + 1}`
+    spendByMonth.set(key, (spendByMonth.get(key) ?? 0) + e.amount)
+  }
 
   return (
     <div>
       <PageHeader
         title="Financial overview"
-        subtitle="The complete picture: income, plan vs. actuals, goals, and recurring costs."
-      />
+        subtitle="Enter your own numbers — every derived value recalculates instantly in your browser."
+      >
+        <Badge tone="accent">Your data stays local</Badge>
+      </PageHeader>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Monthly income" value={formatCurrency(profile.monthlyIncome, { compact: true })} sub={`${profile.incomeSources.length} sources`} />
-        <StatCard label="Budget remaining" value={formatCurrency(budgetRemaining, { compact: true })} sub={`${formatPercent(totals.utilization)} of plan used`} tone={budgetRemaining < 0 ? 'danger' : 'accent'} />
-        <StatCard label="Left to allocate" value={formatCurrency(finance.unallocated, { compact: true })} sub={finance.unallocated < 0 ? 'Plan over-committed' : 'Unplanned so far'} tone={finance.unallocated < 0 ? 'warn' : 'default'} />
-        <StatCard label="Subscriptions / year" value={formatCurrency(subsYearly, { compact: true })} sub={`${formatCurrency(subsMonthly, { compact: true })} per month`} tone="info" />
+        <StatCard label="Monthly income" value={formatCurrency(profile.monthlyIncome, { compact: true })} sub="editable below" />
+        <StatCard label="Total spent" value={formatCurrency(overview.totalSpent, { compact: true })} sub={`${monthExpenses.length} expenses logged`} />
+        <StatCard
+          label="Remaining balance"
+          value={formatCurrency(overview.remainingBalance, { compact: true })}
+          sub={`from ${formatCurrency(profile.availableBalance, { compact: true })} available`}
+          tone={overview.remainingBalance < 0 ? 'danger' : 'accent'}
+        />
+        <StatCard
+          label="Budget remaining"
+          value={formatCurrency(overview.budgetRemaining, { compact: true })}
+          sub={`${formatPercent(overview.budgetUsed)} of ${formatCurrency(profile.monthlyBudget, { compact: true })} used`}
+          tone={overview.overBudget ? 'danger' : 'default'}
+        />
       </div>
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        <Card title="Income sources" subtitle="Only reliable income belongs here">
-          <ul className="space-y-3">
-            {profile.incomeSources.map((source) => {
-              const share = profile.monthlyIncome > 0 ? source.monthlyAmount / profile.monthlyIncome : 0
-              return (
-                <li key={source.id}>
-                  <ProgressBar value={share} tone="info" label={`${source.label} — ${formatCurrency(source.monthlyAmount, { compact: true })}`} />
-                </li>
-              )
-            })}
-          </ul>
-          <p className="mt-4 text-xs text-[var(--gfx-faint)]">
-            Irregular income (tips, gigs) is best treated as a bonus, never as rent money.
-          </p>
+        <Card title="Your numbers" subtitle="Edit any value — totals update everywhere">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <NumberField label="Income / month" value={profile.monthlyIncome} onChange={setIncome} step={100} prefix="R" />
+            <NumberField label="Available balance" value={profile.availableBalance} onChange={setBalance} step={100} prefix="R" hint="Money you have right now" />
+            <NumberField label="Monthly budget" value={profile.monthlyBudget} onChange={setBudget} step={50} prefix="R" hint="Your spending plan" />
+          </div>
+          <dl className="mt-5 grid gap-3 border-t border-[var(--gfx-border)] pt-4 text-sm sm:grid-cols-2">
+            <div className="flex justify-between gap-2">
+              <dt className="text-[var(--gfx-muted)]">Income − budget (monthly net)</dt>
+              <dd className={`tabular font-medium ${finance.net >= 0 ? 'text-[var(--gfx-accent)]' : 'text-[var(--gfx-danger)]'}`}>
+                {formatCurrency(finance.net, { compact: true })}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-[var(--gfx-muted)]">Savings this month (income − spent)</dt>
+              <dd className={`tabular font-medium ${overview.savingsThisMonth >= 0 ? 'text-[var(--gfx-accent)]' : 'text-[var(--gfx-danger)]'}`}>
+                {formatCurrency(overview.savingsThisMonth, { compact: true })}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-[var(--gfx-muted)]">Projected balance at month end</dt>
+              <dd className="tabular font-medium text-[var(--gfx-text)]">{formatCurrency(overview.projectedEndOfMonth, { compact: true })}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-[var(--gfx-muted)]">Budget status</dt>
+              <dd>
+                {overview.overBudget ? <Badge tone="danger">Over budget</Badge> : <Badge tone="accent">Within budget</Badge>}
+              </dd>
+            </div>
+          </dl>
         </Card>
 
-        <Card title="6-month spending trend" subtitle="Current month is your real ledger; earlier months are demo history">
+        <Card title="6-month spending trend" subtitle="Current month from your ledger; earlier months are demo history">
           <MonthlyColumns
             months={months}
             valueByMonth={(m) => {
               const key = `${m.year}-${m.month}`
-              return key === thisMonthKey ? totals.spent : (spendByMonth.get(key) ?? 0)
+              const isCurrent = m.year === new Date().getFullYear() && m.month === new Date().getMonth() + 1
+              return isCurrent ? overview.totalSpent : (spendByMonth.get(key) ?? 0)
             }}
           />
         </Card>
       </div>
 
-      <Card
-        title="Plan vs. actual"
-        subtitle="Every category, side by side"
-        className="mb-6"
-        actions={<Badge tone={totals.overBudget ? 'danger' : 'accent'}>{formatPercent(totals.utilization)} used</Badge>}
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--gfx-border)] text-left text-xs uppercase tracking-wide text-[var(--gfx-faint)]">
-                <th className="pb-2 pr-4 font-medium">Category</th>
-                <th className="pb-2 pr-4 text-right font-medium">Planned</th>
-                <th className="pb-2 pr-4 text-right font-medium">Spent</th>
-                <th className="pb-2 pr-4 text-right font-medium">Difference</th>
-                <th className="hidden pb-2 font-medium sm:table-cell">Progress</th>
-              </tr>
-            </thead>
-            <tbody>
-              {budgetLines.map((line) => {
-                const diff = roundMoney(line.planned - line.spent)
-                const over = diff < 0
-                return (
-                  <tr key={line.id} className="border-b border-[var(--gfx-border)]/60">
-                    <td className="py-2.5 pr-4 text-[var(--gfx-text)]">{line.category}</td>
-                    <td className="tabular py-2.5 pr-4 text-right text-[var(--gfx-muted)]">{formatCurrency(line.planned, { compact: true })}</td>
-                    <td className="tabular py-2.5 pr-4 text-right text-[var(--gfx-text)]">{formatCurrency(line.spent, { compact: true })}</td>
-                    <td className={`tabular py-2.5 pr-4 text-right ${over ? 'text-[var(--gfx-danger)]' : 'text-[var(--gfx-accent)]'}`}>
-                      {over ? '−' : '+'}
-                      {formatCurrency(Math.abs(diff), { compact: true })}
-                    </td>
-                    <td className="hidden py-2.5 sm:table-cell">
-                      <ProgressBar
-                        value={line.planned > 0 ? line.spent / line.planned : 1}
-                        tone={over ? 'danger' : line.spent / line.planned > 0.85 ? 'warn' : 'accent'}
-                      />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <Card title="Savings goals" subtitle="Progress and weekly requirements" className="mb-6">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {goals.map((goal) => {
-            const weeks = weeksUntil(goal.deadline)
-            const weeklyNeed = weeklyAmountNeeded(goal.target, goal.saved, weeks)
-            const progress = progressToward(goal.saved, goal.target)
-            return (
-              <div key={goal.id} className="rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium text-[var(--gfx-text)]">{goal.name}</p>
-                  <Badge tone={weeklyNeed === 0 ? 'accent' : 'neutral'}>{formatPercent(progress)}</Badge>
-                </div>
-                <ProgressBar className="mt-3" value={progress} tone={weeklyNeed === 0 ? 'accent' : progress < 0.3 ? 'warn' : 'info'} />
-                <p className="mt-2 text-xs text-[var(--gfx-faint)]">
-                  Due {formatDate(goal.deadline)} ·{' '}
-                  {weeklyNeed === 0 ? 'On track' : `${formatCurrency(weeklyNeed, { compact: true })}/week`}
-                </p>
-              </div>
-            )
-          })}
+      <Card title="How the math works" subtitle="No hidden logic — here is every formula" className="mb-6">
+        <ul className="space-y-2 text-sm text-[var(--gfx-muted)]">
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Remaining balance = available balance − total expenses</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Budget remaining = monthly budget − total expenses</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Savings this month = monthly income − total expenses</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Monthly net = monthly income − monthly budget</li>
+        </ul>
+        <div className="mt-4">
+          <Button variant="secondary" size="sm" onClick={() => setConfirmingReset(true)}>
+            Reset all data to demo seed
+          </Button>
         </div>
       </Card>
 
       <Disclaimer>
-        Figures are computed in your browser from your entries. They explain your situation — they do
-        not tell you what to do, and they are not financial advice.
+        All figures are deterministic calculations over the values you enter, computed locally in
+        your browser. Nothing is sent anywhere, and nothing here is financial advice.
       </Disclaimer>
+
+      <ConfirmDialog
+        open={confirmingReset}
+        onClose={() => setConfirmingReset(false)}
+        onConfirm={finance.resetToDemoData}
+        title="Reset to demo data?"
+        confirmLabel="Reset everything"
+        danger
+      >
+        <p className="text-sm text-[var(--gfx-muted)]">
+          This clears every value you have entered — balance, budget, expenses, goals, and
+          subscriptions — and restores the labeled demo data. This cannot be undone.
+        </p>
+      </ConfirmDialog>
     </div>
   )
-}
-
-function roundMoneySafe(value) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
 }

@@ -2,35 +2,27 @@ import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import Card from '../components/ui/Card.jsx'
 import { Badge, Button, Disclaimer, ProgressBar } from '../components/ui/Primitives.jsx'
-import { formatCurrency } from '../lib/format'
-import { roundMoney } from '../lib/finance'
 
 const GLOSSARY = [
   { term: 'Zero-based budget', definition: 'Every rand of income gets a planned job — spending, saving, or sharing — until nothing is left unassigned.' },
   { term: 'Cost per use', definition: 'Price divided by how often you actually use it. A R199 service used twice a month costs about R100 per session.' },
   { term: 'Emergency buffer', definition: 'One month of essentials set aside so a surprise does not become debt.' },
-  { term: 'Amortization', definition: 'Paying off a loan in fixed installments; early payments are mostly interest.' },
+  { term: 'Expense ratio', definition: 'The yearly fee a fund charges, as a percentage of your money. Fees compound too, so lower is usually better.' },
   { term: 'Opportunity cost', definition: 'What the next-best option would have given you. Every rand spent here is a rand not saved there.' },
 ]
 
 export default function LearnView({ finance }) {
-  const { lessons, profile, budgetLines, totals } = finance
+  const { lessons } = finance
   const [openId, setOpenId] = useState(lessons[0]?.id ?? null)
   const [readIds, setReadIds] = useState([])
 
-  const markRead = (id) =>
-    setReadIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
-
-  // Live worked example — deterministic, from the user's own numbers.
-  const remaining = roundMoney(profile.monthlyIncome - totals.spent)
-  const worstLine = [...budgetLines].sort((a, b) => b.spent - b.planned - (a.spent - a.planned))[0]
-  const biggestLine = [...budgetLines].sort((a, b) => b.spent - a.spent)[0]
+  const markRead = (id) => setReadIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
 
   return (
     <div>
       <PageHeader
         title="Learning hub"
-        subtitle="Short lessons that use your own numbers as worked examples. Five minutes each, zero jargon."
+        subtitle="Ten short lessons covering the foundations — beginner-friendly, jargon-free, five minutes or less."
       >
         <Badge tone="accent">{readIds.length} of {lessons.length} read</Badge>
       </PageHeader>
@@ -51,13 +43,11 @@ export default function LearnView({ finance }) {
                     {index + 1}
                   </span>
                   <div>
-                    <h3 className="font-medium text-[var(--gfx-text)]">{lesson.title}</h3>
+                    <h3 className="font-medium text-[var(--gfx-text)]">{lesson.topic}</h3>
                     <p className="mt-0.5 text-xs text-[var(--gfx-faint)]">{lesson.minutes} min read</p>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {isRead && <Badge tone="accent">Read</Badge>}
-                </div>
+                {isRead && <Badge tone="accent">Read</Badge>}
               </div>
 
               <p className="mt-3 text-sm text-[var(--gfx-muted)]">{lesson.summary}</p>
@@ -70,12 +60,7 @@ export default function LearnView({ finance }) {
                     ))}
                   </ol>
                   <div className="flex flex-wrap gap-2 pt-1">
-                    <Button
-                      size="sm"
-                      variant={isRead ? 'secondary' : 'primary'}
-                      onClick={() => markRead(lesson.id)}
-                      disabled={isRead}
-                    >
+                    <Button size="sm" variant={isRead ? 'secondary' : 'primary'} onClick={() => markRead(lesson.id)} disabled={isRead}>
                       {isRead ? 'Completed' : 'Mark as read'}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setOpenId(null)}>
@@ -99,46 +84,7 @@ export default function LearnView({ finance }) {
         })}
       </div>
 
-      <Card title="Worked example — your month" subtitle="Computed live from your entries" className="mb-6">
-        <div className="tabular grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-4">
-            <p className="text-xs text-[var(--gfx-faint)]">Income</p>
-            <p className="text-xl font-semibold text-[var(--gfx-text)]">{formatCurrency(profile.monthlyIncome, { compact: true })}</p>
-          </div>
-          <div className="rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-4">
-            <p className="text-xs text-[var(--gfx-faint)]">Spent</p>
-            <p className="text-xl font-semibold text-[var(--gfx-text)]">{formatCurrency(totals.spent, { compact: true })}</p>
-          </div>
-          <div className="rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-4">
-            <p className="text-xs text-[var(--gfx-faint)]">Still available</p>
-            <p className={`text-xl font-semibold ${remaining < 0 ? 'text-[var(--gfx-danger)]' : 'text-[var(--gfx-accent)]'}`}>
-              {formatCurrency(remaining, { compact: true })}
-            </p>
-          </div>
-        </div>
-        <ul className="mt-4 space-y-2 text-sm text-[var(--gfx-muted)]">
-          {biggestLine && (
-            <li className="flex gap-2">
-              <span className="text-[var(--gfx-accent)]">•</span>
-              <span>
-                Your biggest category is <strong className="text-[var(--gfx-text)]">{biggestLine.category}</strong> at{' '}
-                {formatCurrency(biggestLine.spent, { compact: true })}.
-              </span>
-            </li>
-          )}
-          {worstLine && worstLine.spent > worstLine.planned && (
-            <li className="flex gap-2">
-              <span className="text-[var(--gfx-warn)]">•</span>
-              <span>
-                <strong className="text-[var(--gfx-text)]">{worstLine.category}</strong> is{' '}
-                {formatCurrency(worstLine.spent - worstLine.planned, { compact: true })} over plan — that is information, not judgment.
-              </span>
-            </li>
-          )}
-        </ul>
-      </Card>
-
-      <Card title="Plain-language glossary" subtitle="Six terms that cover most of personal finance">
+      <Card title="Plain-language glossary" subtitle="Five terms that unlock most of personal finance">
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {GLOSSARY.map((entry) => (
             <div key={entry.term} className="rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-4">
@@ -151,9 +97,8 @@ export default function LearnView({ finance }) {
 
       <div className="mt-6">
         <Disclaimer>
-          Lessons are general education, not personalized advice. The worked example recalculates
-          from your own entries, so what you see is always your situation — never a claim about what
-          you should do.
+          Lessons are general education, not personalized advice. Worked examples elsewhere in the
+          app always recalculate from your own entries.
         </Disclaimer>
       </div>
     </div>

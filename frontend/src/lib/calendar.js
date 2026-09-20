@@ -15,6 +15,64 @@ export function mondayFirstWeekday(date) {
   return (date.getDay() + 6) % 7
 }
 
+/**
+ * Parse 'YYYY-MM-DD' as LOCAL midnight. new Date('YYYY-MM-DD') parses as UTC
+ * and can shift the calendar day in timezones behind UTC, so we parse by hand.
+ */
+export function parseIsoDate(iso) {
+  const [year, month, day] = String(iso).split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+/** Format a Date as 'YYYY-MM-DD' using LOCAL calendar parts. */
+export function toIsoDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/** Whole days from `from` (default today) until the given ISO date. */
+export function daysUntil(isoDate, from = new Date()) {
+  const target = parseIsoDate(isoDate)
+  const base = startOfDay(from)
+  return Math.round((target.getTime() - base.getTime()) / (24 * 60 * 60 * 1000))
+}
+
+export function startOfDay(date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+/**
+ * Classification for a due date. 'overdue' means the date has passed — the
+ * wording used in the UI stays neutral ("Date passed"), never alarmist.
+ */
+export function dueStatus(days) {
+  if (days < 0) return 'overdue'
+  if (days === 0) return 'today'
+  if (days <= 7) return 'soon'
+  return 'upcoming'
+}
+
+/** Human wording for a day count, kept calm and factual. */
+export function dueLabel(days) {
+  if (days < 0) return 'Date passed'
+  if (days === 0) return 'Due today'
+  if (days === 1) return 'Due tomorrow'
+  if (days <= 13) return `Due in ${days} days`
+  if (days <= 56) return `In ${Math.ceil(days / 7)} weeks`
+  return `In ${Math.round(days / 30.4)} months`
+}
+
+/** Add whole months to an ISO date, returning an ISO date. */
+export function addMonthsIso(isoDate, months) {
+  const d = parseIsoDate(isoDate)
+  d.setMonth(d.getMonth() + months)
+  return toIsoDate(d)
+}
+
 /** Number of days in a month (month is 1-based). */
 export function daysInMonth(year, month1based) {
   return new Date(year, month1based, 0).getDate()

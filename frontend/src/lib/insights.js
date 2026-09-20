@@ -3,85 +3,78 @@
  *
  * No AI, no network: every insight is a local rule. Each entry carries a
  * severity and an optional action route the UI can deep-link to, so
- * observations always lead somewhere the user can act. Used by both the
- * Dashboard and the Ghost assistant.
+ * observations always lead somewhere the user can act. Used by the Dashboard
+ * and the Ghost assistant.
  */
 import { formatCurrency } from './format'
 import {
-  normalizeToMonthly,
   roundMoney,
-  unallocatedIncome,
-  weeklyAmountNeeded,
-  weeksUntil,
+  subscriptionBurden,
 } from './finance'
 
 /**
- * Build insights. Expects { profile, budgetLines, goals, subscriptions,
- * totals } — the same finance-state shape used across the app.
+ * Build insights. Expects the finance-state shape: { profile, expenses,
+ * goals, subscriptions, overview }.
  */
-export function buildInsights({ profile, budgetLines, goals, subscriptions, totals }) {
+export function buildInsights({ profile, expenses, goals, subscriptions, overview }) {
   const insights = []
-  const freeIncome = roundMoney(profile.monthlyIncome - totals.spent)
 
   const push = (severity, title, detail, route, kind = 'review') =>
     insights.push({ id: `${kind}-${insights.length}`, severity, title, detail, route })
 
-  /* Plan health */
-  const unallocated = unallocatedIncome(profile.monthlyIncome, budgetLines)
-  if (unallocated < 0) {
-    push(
-      'warn',
-      'Your plan commits more than your income',
-      `Planned spending is ${formatCurrency(Math.abs(unallocated), { compact: true })} over income. Trim a category or move the plan closer to reality.`,
-      '/budget',
-      'plan',
-    )
-  } else if (unallocated === 0) {
-    push(
-      'accent',
-      'Every rand has a job',
-      'Planned amounts exactly match income — zero-based budgeting achieved. Watch actual spending against the plan.',
-      '/budget',
-      'plan',
-    )
-  } else {
-    push(
-      'info',
-      'You have unallocated income',
-      `${formatCurrency(unallocated, { compact: true })} is not yet planned. Savings is a valid destination, not just "left over".`,
-      '/budget',
-      'plan',
-    )
-  }
-
-  /* Spending vs plan */
-  if (totals.overBudget) {
+  /* Budget health */
+  if (overview.overBudget) {
     push(
       'danger',
-      'Spending has passed the plan',
-      `${formatCurrency(totals.spent, { compact: true })} spent of ${formatCurrency(totals.planned, { compact: true })} planned. Adjust the plan or hold back for the rest of the month.`,
-      '/expenses',
-      'spending',
+      'You are over budget',
+      `Spending is ${formatCurrency(Math.abs(overview.budgetRemaining), { compact: true })} past your ${formatCurrency(profile.monthlyBudget, { compact: true })} budget. The breakdown shows where it went.`,
+      '/spending',
+      'budget',
     )
-  } else if (totals.utilization > 0.85) {
+  } else if (overview.budgetUsed > 0.85) {
     push(
       'warn',
-      'Close to the plan ceiling',
-      `${formatPercent(totals.utilization)} of planned amounts spent — the rest of the month needs to stay lean.`,
-      '/expenses',
-      'spending',
+      'Close to the budget ceiling',
+      `${Math.round(overview.budgetUsed * 100)}% of your budget is spent — the rest of the month needs to stay lean.`,
+      '/spending',
+      'budget',
+    )
+  } else if (overview.totalSpent > 0) {
+    push(
+      'accent',
+      'Spending is inside budget',
+      `${formatCurrency(overview.budgetRemaining, { compact: true })} of budget remains (${Math.round(overview.budgetUsed * 100)}% used).`,
+      '/spending',
+      'budget',
     )
   }
 
-  /* Overspent categories */
-  const overspent = budgetLines
-    .filter((line) => line.spent > line.planned)
-    .sort((a, b) => b.spent - b.planned - (a.spent - a.planned))
-  if (overspent.length > 0) {
+  /* Balance warnings */
+  if (overview.remainingBalance < 0) {
+    push(
+      'danger',
+      'Balance is negative',
+      `After logged expenses, ${formatCurrency(overview.remainingBalance, { compact: true })} remains of your available balance. Check for expenses logged in error or plan a top-up.`,
+      '/expenses',
+      'balance',
+    )
+  } else if (overview.availableBalance > 0 && overview.remainingBalance / overview.availableBalance < 0.2) {
     push(
       'warn',
-      `${overspent.length} categor${overspent.length === 1 ? 'y is' : 'ies are'} over plan`,
-      `${overspent[0].category} leads: ${formatCurrency(overspent[0].spent, { compact: true })} vs ${formatCurrency(overspent[0].planned, { compact: true })} planned.`,
+      'Balance is running low',
+      `Only ${formatCurrency(overview.remainingBalance, { compact: true })} of your ${formatCurrency(profile.availableBalance, { compact: true })} balance is left after this month's spending.`,
+      '/expenses',
+      'balance',
+    )
+  }
+
+  /* Biggest category */
+  const byCategory = expensesByCategorySorted(expenses)
+  if (byCategory.length > 0 && overview.totalSpent > 0) {
+    push(
+      'info',
+      `${byCategory[0].category} is your biggest category`,
+      `${formatCurrency(byCategory[0].total, { compact: true })} — ${Math.round((byCategory[0].total / overview.totalSpent) * 100)}% of all spending this month.`,
       '/spending',
       'spending',
     )
@@ -89,45 +82,29 @@ export function buildInsights({ profile, budgetLines, goals, subscriptions, tota
 
   /* Goals needing attention */
   for (const goal of goals) {
-    const weeks = weeksUntil(goal.deadline)
-    const weeklyNeed = weeklyAmountNeeded(goal.target, goal.saved, weeks)
-    if (weeklyNeed === 0) continue
-    if (weeklyNeed * 4.33 > freeIncome) {
+    if (goal.saved >= goal.target) continue
+    const gap = roundMoney(goal.target - goal.saved)
+    const weeks = Math.max(1, Math.ceil((new Date(goal.targetDate) - new Date()) / (7 * 24 * 60 * 60 * 1000)))
+    const weekly = roundMoney(gap / weeks)
+    if (weekly * 4.33 > Math.max(overview.monthlyIncome - overview.totalSpent, 0)) {
       push(
         'info',
-        `"${goal.name}" needs ${formatCurrency(weeklyNeed, { compact: true })} per week`,
-        `${formatCurrency(goal.target - goal.saved, { compact: true })} to go in ${weeks} weeks. If that weekly number is out of reach, moving the deadline is a valid choice.`,
+        `"${goal.name}" needs ${formatCurrency(weekly, { compact: true })} per week`,
+        `${formatCurrency(gap, { compact: true })} to go in ${weeks} weeks. If that weekly number is out of reach, moving the target date is a valid choice.`,
         '/goals',
         'goal',
       )
-      break // one goal nudge is enough on the dashboard
+      break // one goal nudge is enough
     }
   }
 
   /* Subscriptions */
-  const lowUse = subscriptions.filter((s) => s.usesPerMonth <= 2)
-  if (lowUse.length > 0) {
-    const monthly = roundMoney(
-      lowUse.reduce((sum, s) => sum + normalizeToMonthly(s.amount, s.billingCycle), 0),
-    )
+  const burden = subscriptionBurden(subscriptions, profile.monthlyIncome, profile.monthlyBudget)
+  if (subscriptions.length > 0 && burden.shareOfIncome > 0.15) {
     push(
-      'info',
-      `${lowUse.length} subscription${lowUse.length === 1 ? ' is' : 's are'} barely used`,
-      `${lowUse.map((s) => s.name).join(', ')} — ${formatCurrency(monthly, { compact: true })}/month combined. That is ${formatCurrency(roundMoney(monthly * 12), { compact: true })} a year toward whatever you choose.`,
-      '/subscriptions',
-      'subscription',
-    )
-  }
-
-  const highCpu = subscriptions
-    .map((s) => ({ ...s, monthly: normalizeToMonthly(s.amount, s.billingCycle) }))
-    .map((s) => ({ ...s, cpu: s.usesPerMonth > 0 ? roundMoney(s.monthly / s.usesPerMonth) : null }))
-    .filter((s) => s.cpu !== null && s.cpu > 50)
-  if (highCpu.length > 0) {
-    push(
-      'info',
-      'High cost per use detected',
-      highCpu.map((s) => `${s.name} at ${formatCurrency(s.cpu, { compact: true })}/use`).join(', '),
+      'warn',
+      'Subscriptions take a big slice',
+      `${formatCurrency(burden.monthly, { compact: true })}/month is ${Math.round(burden.shareOfIncome * 100)}% of income (${formatCurrency(burden.yearly, { compact: true })}/year). The Subscriptions view can simulate cuts.`,
       '/subscriptions',
       'subscription',
     )
@@ -137,7 +114,7 @@ export function buildInsights({ profile, budgetLines, goals, subscriptions, tota
     push(
       'accent',
       'Nothing flagged right now',
-      'Plan, spending, goals, and subscriptions all look steady. Revisit after your next big expense or at month end.',
+      'Balance, budget, goals, and subscriptions all look steady. Revisit after your next big expense.',
       '/dashboard',
       'review',
     )
@@ -146,6 +123,12 @@ export function buildInsights({ profile, budgetLines, goals, subscriptions, tota
   return insights
 }
 
-function formatPercent(ratio) {
-  return `${Math.round(ratio * 100)}%`
+function expensesByCategorySorted(expenses) {
+  const map = new Map()
+  for (const expense of expenses) {
+    map.set(expense.category, roundMoney((map.get(expense.category) ?? 0) + expense.amount))
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, total]) => ({ category, total }))
 }
