@@ -73,7 +73,7 @@ export function deriveOverview({ profile, expenses }) {
     budgetUsed,
     overBudget: budgetRemaining < 0,
     savingsThisMonth: roundMoney(profile.monthlyIncome - totalSpent),
-    projectedEndOfMonth,
+  projectedEndOfMonth,
   }
 }
 
@@ -220,6 +220,30 @@ export function savingsPlan(price, alreadySaved, monthlySaving, freeMonthlyIncom
     verdict = 'Not covered by free monthly income'
   }
   return { gap, monthsNeeded, shareOfFreeIncome, verdict }
+}
+
+/**
+ * Savings overview. Distinguishes explicit savings from leftover cash:
+ * - contributionsThisMonth: real, recorded transfers into savings.
+ * - leftoverCash: income − expenses — potential savings, NOT savings.
+ * - totalSaved: money recorded as saved across goals.
+ */
+export function savingsOverview({ contributions, goals, net }) {
+  const reference = new Date()
+  const thisMonth = contributions.filter((c) => {
+    const d = new Date(c.date)
+    return d.getMonth() === reference.getMonth() && d.getFullYear() === reference.getFullYear()
+  })
+  const contributionsThisMonth = sumAmounts(thisMonth.map((c) => c.amount))
+  const contributedTotal = sumAmounts(contributions.map((c) => c.amount))
+  const totalSaved = sumAmounts(goals.map((g) => g.saved))
+  return {
+    contributionsThisMonth,
+    contributedTotal,
+    totalSaved,
+    leftoverCash: roundMoney(net),
+    savingsRate: net > 0 ? Math.min(1, contributionsThisMonth / net) : 0,
+  }
 }
 
 /* ------------------------------ what-if simulation ------------------------ */

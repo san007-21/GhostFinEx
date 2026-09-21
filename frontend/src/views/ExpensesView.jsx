@@ -55,7 +55,7 @@ export default function ExpensesView({ finance }) {
         title="Expenses"
         subtitle="Log what you spend. Totals everywhere in the app are calculated from this ledger."
       >
-        <Button onClick={() => { setFormError(''); setAddOpen(true) }}>+ Add expense</Button>
+        <Button onClick={() => { setForm(EMPTY_FORM); setFormError(''); setAddOpen(true) }}>+ Add expense</Button>
       </PageHeader>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -84,7 +84,7 @@ export default function ExpensesView({ finance }) {
                   ? 'Log your first expense and watch totals, charts, and the calendar update instantly.'
                   : 'Try another category, or add an expense to this one.'
               }
-              action={<Button onClick={() => setAddOpen(true)}>+ Add expense</Button>}
+              action={<Button onClick={() => { setForm(EMPTY_FORM); setFormError(''); setAddOpen(true) }}>+ Add expense</Button>}
             />
           ) : (
             <>

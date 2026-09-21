@@ -77,6 +77,12 @@ export default function CalendarView({ finance, onNavigate }) {
     .filter((plan) => plan.date >= todayIso)
     .sort((a, b) => a.date.localeCompare(b.date))
 
+  const openPlanModal = () => {
+    setPlanForm(EMPTY_PLAN)
+    setPlanError('')
+    setPlanOpen(true)
+  }
+
   const submitPlan = (event) => {
     event.preventDefault()
     const name = planForm.name.trim()
@@ -98,7 +104,7 @@ export default function CalendarView({ finance, onNavigate }) {
         title="Financial calendar"
         subtitle="Due dates derived from your own data — savings targets, recurring billing, planned expenses, and budget resets."
       >
-        <Button onClick={() => { setPlanError(''); setPlanOpen(true) }}>+ Plan an expense</Button>
+        <Button onClick={openPlanModal}>+ Plan an expense</Button>
       </PageHeader>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -132,7 +138,7 @@ export default function CalendarView({ finance, onNavigate }) {
               icon={IconCalendar}
               title="Nothing on the calendar yet"
               description="Add a savings goal, subscription, or planned expense and its dates will appear here automatically."
-              action={<Button onClick={() => setPlanOpen(true)}>+ Plan an expense</Button>}
+              action={<Button onClick={openPlanModal}>+ Plan an expense</Button>}
             />
           ) : (
             <>
@@ -258,7 +264,7 @@ export default function CalendarView({ finance, onNavigate }) {
           <Card
             title="Planned expenses"
             subtitle="Scheduled ahead — mark as paid when done"
-            actions={<Button variant="ghost" size="sm" onClick={() => setPlanOpen(true)}>+ Plan</Button>}
+            actions={<Button variant="ghost" size="sm" onClick={openPlanModal}>+ Plan</Button>}
           >
             {plannedUpcoming.length === 0 ? (
               <p className="text-sm text-[var(--gfx-faint)]">Nothing planned ahead. Use "Plan an expense" to schedule the next one.</p>

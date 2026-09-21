@@ -61,7 +61,7 @@ export default function OverviewView({ finance }) {
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--gfx-muted)]">Savings this month (income − spent)</dt>
+              <dt className="text-[var(--gfx-muted)]">Remaining cash (income − spent)</dt>
               <dd className={`tabular font-medium ${overview.savingsThisMonth >= 0 ? 'text-[var(--gfx-accent)]' : 'text-[var(--gfx-danger)]'}`}>
                 {formatCurrency(overview.savingsThisMonth, { compact: true })}
               </dd>
@@ -95,7 +95,7 @@ export default function OverviewView({ finance }) {
         <ul className="space-y-2 text-sm text-[var(--gfx-muted)]">
           <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Remaining balance = available balance − total expenses</li>
           <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Budget remaining = monthly budget − total expenses</li>
-          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Savings this month = monthly income − total expenses</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Remaining cash = monthly income − total expenses (potential savings — not savings until you record a contribution)</li>
           <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Monthly net = monthly income − monthly budget</li>
         </ul>
         <div className="mt-4">

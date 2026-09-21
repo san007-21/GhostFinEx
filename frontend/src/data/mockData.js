@@ -86,6 +86,47 @@ export const DEMO_GOALS = [
   },
 ]
 
+/* ------------------------------- accounts -------------------------------- */
+
+/** Account types the Accounts view supports. Frontend-only — no bank links. */
+export const ACCOUNT_TYPES = ['Cash', 'Bank account', 'Savings account', 'Other']
+
+export const DEMO_ACCOUNTS = [
+  {
+    id: 'acc-001',
+    name: 'Everyday card',
+    type: 'Bank account',
+    balance: 2860,
+    note: 'Where income lands; card payments come off here.',
+  },
+  {
+    id: 'acc-002',
+    name: 'Wallet cash',
+    type: 'Cash',
+    balance: 140,
+    note: 'Cash on hand for markets and taxis.',
+  },
+  {
+    id: 'acc-003',
+    name: 'Emergency savings',
+    type: 'Savings account',
+    balance: 1450,
+    note: 'Matches the Emergency buffer goal.',
+  },
+]
+
+/* ------------------------- savings contributions ------------------------- */
+
+/**
+ * Money the user EXPLICITLY moved into savings. This is never derived from
+ * income minus expenses — leftover money is only potential savings until the
+ * user records a real transfer.
+ */
+export const DEMO_SAVINGS_CONTRIBUTIONS = [
+  { id: 'sav-001', amount: 400, date: '2026-09-05', destination: 'goal-goal-emergency', label: 'Monthly top-up' },
+  { id: 'sav-002', amount: 250, date: '2026-09-14', destination: 'goal-goal-trip', label: 'Bus ticket fund' },
+]
+
 /* ----------------------------- subscriptions ----------------------------- */
 
 export const DEMO_SUBSCRIPTIONS = [

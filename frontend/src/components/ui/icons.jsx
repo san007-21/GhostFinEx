@@ -194,6 +194,25 @@ export function IconMenu(props) {
   )
 }
 
+export function IconUser(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="5.5" r="2.75" />
+      <path d="M2.75 13.5a5.25 5.25 0 0 1 10.5 0" />
+    </Icon>
+  )
+}
+
+export function IconPiggyBank(props) {
+  return (
+    <Icon {...props}>
+      <path d="M3.5 8.5a4.5 4.5 0 0 1 8.9-1h1.1a1.5 1.5 0 0 1 1.5 1.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-.7a4.4 4.4 0 0 1-1.3 1.6V13a.9.9 0 0 1-.9.9h-1a.9.9 0 0 1-.9-.9v-.4h-2.4v.4a.9.9 0 0 1-.9.9h-1a.9.9 0 0 1-.9-.9v-.4A4.5 4.5 0 0 1 3.5 8.5Z" />
+      <circle cx="10.4" cy="8" r="0.6" className="fill-current stroke-none" />
+      <path d="M6.4 8.4h2.4" />
+  </Icon>
+  )
+}
+
 export function IconX(props) {
   return (
     <Icon {...props}>

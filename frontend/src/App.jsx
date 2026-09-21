@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import { useFinanceState } from './hooks/useFinanceState'
+import { AuthProvider } from './auth/authContext.jsx'
 import { Disclaimer } from './components/ui/Primitives.jsx'
 import Sidebar from './components/nav/Sidebar.jsx'
 import TopBar from './components/nav/TopBar.jsx'
@@ -15,6 +16,14 @@ function initialViewId() {
 }
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <GhostFinEx />
+    </AuthProvider>
+  )
+}
+
+function GhostFinEx() {
   const [activeId, setActiveId] = useState(initialViewId)
   const [menuOpen, setMenuOpen] = useState(false)
   const [ghostOpen, setGhostOpen] = useState(false)

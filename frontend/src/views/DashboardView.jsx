@@ -73,7 +73,7 @@ export default function DashboardView({ finance, onNavigate }) {
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Monthly income" value={formatCurrency(profile.monthlyIncome, { compact: true })} />
-        <StatCard label="Saved this month" value={formatCurrency(overview.savingsThisMonth, { compact: true })} sub="income − spent" tone={overview.savingsThisMonth >= 0 ? 'accent' : 'danger'} />
+        <StatCard label="Remaining cash" value={formatCurrency(overview.savingsThisMonth, { compact: true })} sub="income − spent · not savings yet" tone={overview.savingsThisMonth >= 0 ? 'default' : 'danger'} />
         <StatCard label="Subscription burden" value={formatCurrency(burden.monthly, { compact: true })} sub={`${Math.round(burden.shareOfIncome * 100)}% of income`} tone="info" />
         <StatCard label="Goals" value={String(goals.length)} sub={`${goals.filter((g) => g.saved >= g.target).length} complete`} />
       </div>

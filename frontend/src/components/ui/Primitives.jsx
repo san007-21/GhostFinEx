@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+
 /**
  * Small presentational primitives shared across all views.
  * They contain no financial logic — values arrive already computed.
@@ -19,7 +21,47 @@ export function Button({ variant = 'primary', size = 'md', className = '', type 
   return <button type={type} className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props} />
 }
 
-export function NumberField({ label, value, onChange, min = 0, step = 1, prefix, suffix, hint, ...props }) {
+/**
+ * Numeric input with a typing-friendly contract:
+ * - Draft text lives locally, so the user can clear the field completely and
+ *   retype (no forced "0", no NaN, values like 500 / 1500 / 9999.50 work).
+ * - Only numeric characters are accepted; values below `min` are blocked
+ *   while typing for non-negative financial fields.
+ * - Valid numbers propagate immediately so live totals keep updating; while
+ *   clearing, `''` is propagated so forms can hold an empty string.
+ * - On blur the draft is normalized: '' becomes `fallback` (0) and the value
+ *   is clamped to [min, max], so stored data is always a finite number.
+ * - External value changes (demo reset, modal reopening) re-sync the draft,
+ *   but changes this field itself propagated never bounce back mid-edit.
+ */
+export function NumberField({ label, value, onChange, min = 0, max, step = 1, prefix, suffix, hint, fallback = 0, ...props }) {
+  const [draft, setDraft] = useState(typeof value === 'number' && Number.isFinite(value) ? String(value) : '')
+  const lastPropagated = useRef(null)
+  const focusedRef = useRef(false)
+
+  useEffect(() => {
+    // While the user is editing, their draft wins — a store that clamps the
+    // propagated '' back to 0 must not clobber the cleared field. Resync from
+    // props only when unfocused (e.g. demo reset, modal reopened).
+    if (focusedRef.current || value === lastPropagated.current) return
+    setDraft(typeof value === 'number' && Number.isFinite(value) ? String(value) : '')
+  }, [value])
+
+  const propagate = (next) => {
+    lastPropagated.current = next
+    onChange(next)
+  }
+
+  const commitDraft = () => {
+    const raw = draft.trim()
+    let next = raw === '' ? fallback : Number(raw)
+    if (!Number.isFinite(next)) next = fallback
+    if (next < min) next = min
+    if (max !== undefined && next > max) next = max
+    setDraft(String(next))
+    propagate(next)
+  }
+
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-[var(--gfx-muted)]">
@@ -28,14 +70,24 @@ export function NumberField({ label, value, onChange, min = 0, step = 1, prefix,
       <span className="flex items-center gap-2 rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3 py-2 transition-colors focus-within:border-[var(--gfx-accent-strong)]">
         {prefix && <span className="text-sm text-[var(--gfx-faint)]">{prefix}</span>}
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           className="tabular w-full min-w-0 bg-transparent text-sm text-[var(--gfx-text)] outline-none"
-          value={Number.isFinite(value) ? value : ''}
+          value={draft}
           min={min}
           step={step}
           onChange={(e) => {
-            const next = e.target.value === '' ? 0 : Number(e.target.value)
-            onChange(Number.isFinite(next) ? next : 0)
+            const raw = e.target.value
+            if (raw !== '' && !/^-?\d*\.?\d*$/.test(raw)) return
+            if (raw !== '' && !Number.isFinite(Number(raw))) return
+            if (raw !== '' && Number(raw) < min) return
+            setDraft(raw)
+            propagate(raw === '' ? '' : Number(raw))
+          }}
+          onFocus={() => { focusedRef.current = true }}
+          onBlur={() => {
+            focusedRef.current = false
+            commitDraft()
           }}
           {...props}
         />

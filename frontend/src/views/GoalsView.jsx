@@ -37,6 +37,12 @@ export default function GoalsView({ finance }) {
     setDepositAmount(0)
   }
 
+  const openCreateModal = () => {
+    setForm(EMPTY_GOAL)
+    setFormError('')
+    setCreateOpen(true)
+  }
+
   if (goals.length === 0) {
     return (
       <div>
@@ -45,7 +51,7 @@ export default function GoalsView({ finance }) {
           icon={IconTarget}
           title="No goals yet"
           description="Name something worth saving for — a laptop, a trip home, a safety buffer. GhostFinEx works out the honest weekly number for you."
-          action={<Button onClick={() => setCreateOpen(true)}>Create your first goal</Button>}
+          action={<Button onClick={openCreateModal}>Create your first goal</Button>}
         />
         <GoalModal open={createOpen} onClose={() => setCreateOpen(false)} form={form} setForm={setForm} formError={formError} onSubmit={submitCreate} />
       </div>
@@ -58,7 +64,7 @@ export default function GoalsView({ finance }) {
         title="Savings goals"
         subtitle="Progress, remaining amount, and percentage completed — recalculated from your entries."
       >
-        <Button onClick={() => { setFormError(''); setCreateOpen(true) }}>+ New goal</Button>
+        <Button onClick={openCreateModal}>+ New goal</Button>
       </PageHeader>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -123,12 +129,12 @@ export default function GoalsView({ finance }) {
 
       <Card title="Savings capacity" subtitle="How your goals compare with this month's capacity" className="mt-6">
         <p className="text-sm text-[var(--gfx-muted)]">
-          Income left after spending this month:{' '}
+          Cash left after spending this month:{' '}
           <strong className={`tabular ${overview.savingsThisMonth >= 0 ? 'text-[var(--gfx-accent)]' : 'text-[var(--gfx-danger)]'}`}>
             {formatCurrency(overview.savingsThisMonth, { compact: true })}
           </strong>
-          . If deposits exceed that number, you are planning to save more than the month allows — the
-          What-if view can test the trade-off.
+          . Leftover cash is potential savings — record it in the Savings view to make it real. If deposits
+          exceed that number, you are planning to save more than the month allows — the What-if view can test the trade-off.
         </p>
       </Card>
 
@@ -137,8 +143,7 @@ export default function GoalsView({ finance }) {
       <Modal
         open={depositGoal !== null}
         onClose={() => setDepositGoal(null)}
-        title={`Add deposit — ${depositGoal?.name ?? ''}`}
-        footer={
+        title={`Add deposit — ${depositGoal?.name ?? ''}`}        footer={
           <>
             <Button variant="ghost" onClick={() => setDepositGoal(null)}>Cancel</Button>
             <Button onClick={submitDeposit} disabled={depositAmount <= 0}>Add to goal</Button>

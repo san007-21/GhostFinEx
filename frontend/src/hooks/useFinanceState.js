@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import { useLocalStorageState } from './useLocalStorageState'
 import {
+  DEMO_ACCOUNTS,
   DEMO_ADVISOR_TIPS,
   DEMO_DEALS,
   DEMO_EXPENSES,
@@ -10,10 +11,11 @@ import {
   DEMO_PLANNED_EXPENSES,
   DEMO_PRODUCTS,
   DEMO_PROFILE,
+  DEMO_SAVINGS_CONTRIBUTIONS,
   DEMO_SUBSCRIPTIONS,
   EXPENSE_CATEGORIES,
 } from '../data/mockData'
-import { deriveOverview, monthlyNet, roundMoney, upcomingRenewals } from '../lib/finance'
+import { deriveOverview, monthlyNet, roundMoney, savingsOverview, upcomingRenewals } from '../lib/finance'
 
 const STORAGE_VERSION = 'v2'
 
@@ -31,6 +33,8 @@ export function useFinanceState() {
   const [goals, setGoals] = useLocalStorageState(`${STORAGE_VERSION}.goals`, DEMO_GOALS)
   const [subscriptions, setSubscriptions] = useLocalStorageState(`${STORAGE_VERSION}.subscriptions`, DEMO_SUBSCRIPTIONS)
   const [plannedExpenses, setPlannedExpenses] = useLocalStorageState(`${STORAGE_VERSION}.plannedExpenses`, DEMO_PLANNED_EXPENSES)
+  const [accounts, setAccounts] = useLocalStorageState(`${STORAGE_VERSION}.accounts`, DEMO_ACCOUNTS)
+  const [savingsContributions, setSavingsContributions] = useLocalStorageState(`${STORAGE_VERSION}.savingsContributions`, DEMO_SAVINGS_CONTRIBUTIONS)
   const [activityLog, setActivityLog] = useLocalStorageState(`${STORAGE_VERSION}.activity`, [])
 
   // Reference content — mock/demo, NOT user data, never persisted.
@@ -48,6 +52,15 @@ export function useFinanceState() {
   )
   const net = useMemo(() => monthlyNet(profile.monthlyIncome, profile.monthlyBudget), [profile])
   const renewals = useMemo(() => upcomingRenewals(subscriptions, 6), [subscriptions])
+  const savings = useMemo(
+    () =>
+      savingsOverview({
+        contributions: savingsContributions,
+        goals,
+        net,
+      }),
+    [savingsContributions, goals, net],
+  )
 
   /**
    * Append an activity entry. Entries are generated from real user actions
@@ -168,6 +181,51 @@ export function useFinanceState() {
     [setSubscriptions, logActivity],
   )
 
+  /* ------------------------------- accounts ------------------------------- */
+  const addAccount = useCallback(
+    (account) => {
+      setAccounts((prev) => [...prev, { id: `acc-user-${Date.now()}`, ...account }])
+      logActivity('account', `Account added — ${account.name}`, formatDetail(account.balance), 'info')
+    },
+    [setAccounts, logActivity],
+  )
+  const updateAccount = useCallback(
+    (accountId, patch) =>
+      setAccounts((prev) => prev.map((a) => (a.id === accountId ? { ...a, ...patch } : a))),
+    [setAccounts],
+  )
+  const removeAccount = useCallback(
+    (accountId) => {
+      setAccounts((prev) => {
+        const target = prev.find((a) => a.id === accountId)
+        if (target) logActivity('account', `Account removed — ${target.name}`, '—', 'neutral')
+        return prev.filter((a) => a.id !== accountId)
+      })
+    },
+    [setAccounts, logActivity],
+  )
+
+  /* -------------------------- savings contributions ----------------------- */
+  /**
+   * Record a REAL savings contribution. Leftover income is never implied to
+   * be savings — only an explicit entry counts. When the destination is a
+   * goal, the goal's saved amount is updated with the same deterministic
+   * action so both views agree.
+   */
+  const recordSavings = useCallback(
+    ({ amount, date, destination, label }) => {
+      const safeAmount = roundMoney(Math.max(0, amount))
+      const entry = { id: `sav-user-${Date.now()}`, amount: safeAmount, date, destination: destination ?? '', label: label?.trim() || 'Contribution' }
+      setSavingsContributions((prev) => [entry, ...prev])
+      if (entry.destination.startsWith('goal-')) {
+        const goalId = entry.destination.slice('goal-'.length)
+        setGoals((prev) => prev.map((g) => (g.id === goalId ? { ...g, saved: roundMoney(g.saved + safeAmount) } : g)))
+      }
+      logActivity('savings', `Savings contribution — ${entry.label}`, `+${formatDetail(safeAmount)}`, 'accent')
+    },
+    [setSavingsContributions, setGoals, logActivity],
+  )
+
   /* --------------------------- planned expenses --------------------------- */
   const addPlannedExpense = useCallback(
     (planned) => {
@@ -218,8 +276,10 @@ export function useFinanceState() {
     setGoals(DEMO_GOALS)
     setSubscriptions(DEMO_SUBSCRIPTIONS)
     setPlannedExpenses(DEMO_PLANNED_EXPENSES)
+    setAccounts(DEMO_ACCOUNTS)
+    setSavingsContributions(DEMO_SAVINGS_CONTRIBUTIONS)
     setActivityLog([])
-  }, [setProfile, setExpenses, setGoals, setSubscriptions, setPlannedExpenses, setActivityLog])
+  }, [setProfile, setExpenses, setGoals, setSubscriptions, setPlannedExpenses, setAccounts, setSavingsContributions, setActivityLog])
 
   return {
     // persisted state
@@ -228,6 +288,8 @@ export function useFinanceState() {
     goals,
     subscriptions,
     plannedExpenses,
+    accounts,
+    savingsContributions,
     activityLog,
     // reference content (mock, not persisted)
     lessons,
@@ -240,6 +302,7 @@ export function useFinanceState() {
     overview,
     net,
     renewals,
+    savings,
     // actions
     updateProfile,
     setIncome,
@@ -258,6 +321,10 @@ export function useFinanceState() {
     updatePlannedExpense,
     removePlannedExpense,
     payPlannedExpense,
+    addAccount,
+    updateAccount,
+    removeAccount,
+    recordSavings,
     resetToDemoData,
   }
 }

@@ -44,7 +44,7 @@ export default function SubscriptionsView({ finance, onNavigate }) {
         title="Subscriptions"
         subtitle="Your recurring costs, normalized to monthly so yearly and monthly plans compare fairly."
       >
-        <Button onClick={() => { setFormError(''); setAddOpen(true) }}>+ Add subscription</Button>
+        <Button onClick={() => { setForm(EMPTY_SUB); setFormError(''); setAddOpen(true) }}>+ Add subscription</Button>
       </PageHeader>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -59,7 +59,7 @@ export default function SubscriptionsView({ finance, onNavigate }) {
           icon={IconRepeat}
           title="No subscriptions tracked"
           description="Add your recurring services — streaming, storage, data — to see the true monthly and yearly cost of the quiet leaks."
-          action={<Button onClick={() => setAddOpen(true)}>+ Add subscription</Button>}
+          action={<Button onClick={() => { setForm(EMPTY_SUB); setFormError(''); setAddOpen(true) }}>+ Add subscription</Button>}
         />
       ) : (
         <>

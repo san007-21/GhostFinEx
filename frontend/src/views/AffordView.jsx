@@ -39,7 +39,7 @@ export default function AffordView({ finance, onNavigate }) {
       }
       let savingsPart
       if (analysis.monthsOfSaving !== null && analysis.monthsOfSaving > 0) {
-        savingsPart = ` At your typical saving rate of ${formatCurrency(analysis.savingCapacity)}/month, this price equals ${analysis.monthsOfSaving === 1 ? 'one month' : `${analysis.monthsOfSaving} months`} of saving.`
+        savingsPart = ` Measured against your plan capacity of ${formatCurrency(analysis.savingCapacity)}/month (income − budget), this price equals ${analysis.monthsOfSaving === 1 ? 'one month' : `${analysis.monthsOfSaving} months`} of not-spending.`
       } else {
         savingsPart = ' Your current plan has no monthly saving capacity, so this would come entirely from existing balance.'
       }
@@ -47,7 +47,7 @@ export default function AffordView({ finance, onNavigate }) {
     }
     const shortfall = formatCurrency(Math.abs(analysis.remainingAfterPurchase))
     const months = analysis.monthsOfSaving
-    return `Your balance does not cover this yet — you are ${shortfall} short. At your typical saving rate of ${formatCurrency(analysis.savingCapacity)}/month, you would need about ${months ?? 'more'} ${months === 1 ? 'month' : 'months'} of saving. The Goals and What-if views can help you plan it.`
+    return `Your balance does not cover this yet — you are ${shortfall} short. Measured against your plan capacity of ${formatCurrency(analysis.savingCapacity)}/month (income − budget), you would need about ${months ?? 'more'} ${months === 1 ? 'month' : 'months'} of it. The Goals and What-if views can help you plan it.`
   })()
 
   return (
