@@ -294,8 +294,8 @@ export function useFinanceState() {
   )
   const renewals = useMemo(() => upcomingRenewals(activeSubscriptions, 6), [activeSubscriptions])
   const savings = useMemo(
-    () => savingsOverview({ contributions: activeContributions, goals: activeGoals, net }),
-    [activeContributions, activeGoals, net],
+    () => savingsOverview({ contributions: activeContributions, goals: activeGoals, net, leftoverCash: overview.savingsThisMonth }),
+    [activeContributions, activeGoals, net, overview.savingsThisMonth],
   )
 
   /* ======================= LOCAL actions (unchanged) ===================== */

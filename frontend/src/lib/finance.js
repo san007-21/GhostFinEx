@@ -275,10 +275,13 @@ export function savingsPlan(price, alreadySaved, monthlySaving, freeMonthlyIncom
 /**
  * Savings overview. Distinguishes explicit savings from leftover cash:
  * - contributionsThisMonth: real, recorded transfers into savings.
- * - leftoverCash: income − expenses — potential savings, NOT savings.
+ * - leftoverCash: income − this month's expenses — potential savings, NOT
+ *   savings. Pass `leftoverCash` (e.g. overview.savingsThisMonth) so the
+ *   month-scoped figure is computed once in deriveOverview; falls back to
+ *   `net` (income − budget) only for callers that cannot supply it.
  * - totalSaved: money recorded as saved across goals.
  */
-export function savingsOverview({ contributions, goals, net }, reference = new Date()) {
+export function savingsOverview({ contributions, goals, net, leftoverCash }, reference = new Date()) {
   const thisMonth = contributions.filter((c) => {
     if (!c.date) return false
     const [year, month, day] = String(c.date).split('-').map(Number)
@@ -292,7 +295,7 @@ export function savingsOverview({ contributions, goals, net }, reference = new D
     contributionsThisMonth,
     contributedTotal,
     totalSaved,
-    leftoverCash: roundMoney(net),
+    leftoverCash: leftoverCash !== undefined ? roundMoney(leftoverCash) : roundMoney(net),
     savingsRate: net > 0 ? Math.min(1, contributionsThisMonth / net) : 0,
   }
 }

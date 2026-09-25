@@ -17,11 +17,13 @@ export default function AuthView({ onNavigate }) {
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
 
   const switchMode = (next) => {
     setMode(next)
     setError('')
+    setNotice('')
   }
 
   const submit = async (event) => {
@@ -32,7 +34,13 @@ export default function AuthView({ onNavigate }) {
       if (mode === 'signin') {
         await auth.signIn(email, password)
       } else {
-        await auth.signUp(email, password, displayName)
+        const data = await auth.signUp(email, password, displayName)
+        // Email confirmation enabled: Supabase returns no session. Show the
+        // notice instead of silently landing the user back in demo mode.
+        if (data && !data.session) {
+          setNotice('Check your inbox to confirm your email address, then sign in.')
+          return
+        }
       }
       onNavigate('dashboard')
     } catch (err) {
@@ -128,6 +136,9 @@ export default function AuthView({ onNavigate }) {
             </label>
             {error && (
               <Alert tone="danger" title="That didn't work">{error}</Alert>
+            )}
+            {notice && (
+              <Alert tone="info" title="Almost there">{notice}</Alert>
             )}
             <Button type="submit" size="lg" className="w-full" disabled={busy}>
               {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
