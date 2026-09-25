@@ -4,7 +4,7 @@ import Card from '../components/ui/Card.jsx'
 import { Alert, Badge, Button, EmptyState, ProgressBar, StatCard } from '../components/ui/Primitives.jsx'
 import { Donut } from '../components/charts/Charts.jsx'
 import { formatCurrency, formatDate, formatPercent } from '../lib/format'
-import { expensesByCategory, subscriptionBurden } from '../lib/finance'
+import { expensesByCategory, expensesInMonth, subscriptionBurden } from '../lib/finance'
 import { dueLabel } from '../lib/calendar'
 import { deriveCalendarEvents, nextUpcoming } from '../lib/events'
 import { buildInsights } from '../lib/insights'
@@ -17,8 +17,9 @@ export default function DashboardView({ finance, onNavigate }) {
     () => buildInsights({ profile, expenses, goals, subscriptions, overview }),
     [profile, expenses, goals, subscriptions, overview],
   )
-  const spendData = useMemo(
-    () => expensesByCategory(expenses).map((entry) => ({ label: entry.category, value: entry.total })),
+  // Current-month spending mix — month-scoped like every other monthly figure.
+  const monthSpendData = useMemo(
+    () => expensesByCategory(expensesInMonth(expenses)).map((entry) => ({ label: entry.category, value: entry.total })),
     [expenses],
   )
   const burden = subscriptionBurden(subscriptions, profile.monthlyIncome, profile.monthlyBudget)
@@ -48,13 +49,13 @@ export default function DashboardView({ finance, onNavigate }) {
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-[var(--gfx-muted)]">
-              Balance after logged expenses
+              Available balance
             </p>
-            <p className={`tabular mt-1 text-4xl font-semibold tracking-tight ${overview.remainingBalance < 0 ? 'text-[var(--gfx-danger)]' : 'text-[var(--gfx-accent)]'}`}>
-              {formatCurrency(overview.remainingBalance)}
+            <p className={`tabular mt-1 text-4xl font-semibold tracking-tight ${overview.availableBalance < 0 ? 'text-[var(--gfx-danger)]' : 'text-[var(--gfx-accent)]'}`}>
+              {formatCurrency(overview.availableBalance)}
             </p>
             <p className="mt-1 text-sm text-[var(--gfx-muted)]">
-              {formatCurrency(profile.availableBalance, { compact: true })} available − {formatCurrency(overview.totalSpent, { compact: true })} spent
+              Money you hold right now — maintain it in the Accounts view · {formatCurrency(overview.monthSpent, { compact: true })} spent this month
             </p>
           </div>
           <div className="min-w-56 flex-1">
@@ -73,7 +74,7 @@ export default function DashboardView({ finance, onNavigate }) {
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Monthly income" value={formatCurrency(profile.monthlyIncome, { compact: true })} />
-        <StatCard label="Remaining cash" value={formatCurrency(overview.savingsThisMonth, { compact: true })} sub="income − spent · not savings yet" tone={overview.savingsThisMonth >= 0 ? 'default' : 'danger'} />
+        <StatCard label="Remaining cash" value={formatCurrency(overview.savingsThisMonth, { compact: true })} sub="income − this month's spending · not savings yet" tone={overview.savingsThisMonth >= 0 ? 'default' : 'danger'} />
         <StatCard label="Subscription burden" value={formatCurrency(burden.monthly, { compact: true })} sub={`${Math.round(burden.shareOfIncome * 100)}% of income`} tone="info" />
         <StatCard label="Goals" value={String(goals.length)} sub={`${goals.filter((g) => g.saved >= g.target).length} complete`} />
       </div>
@@ -98,15 +99,15 @@ export default function DashboardView({ finance, onNavigate }) {
         </Card>
 
         <Card title="Spending mix" subtitle="Where money went this month">
-          {spendData.length === 0 ? (
+          {monthSpendData.length === 0 ? (
             <EmptyState
               icon={null}
-              title="No expenses yet"
-              description="Your spending mix appears once expenses are logged."
+              title="No expenses this month"
+              description="Your spending mix appears once this month has expenses logged."
               action={<Button size="sm" onClick={() => onNavigate('expenses')}>Log an expense</Button>}
             />
           ) : (
-            <Donut data={spendData.slice(0, 5)} centerLabel="spent" centerValue={formatCurrency(overview.totalSpent, { compact: true })} />
+            <Donut data={monthSpendData.slice(0, 5)} centerLabel="spent this month" centerValue={formatCurrency(overview.monthSpent, { compact: true })} />
           )}
         </Card>
       </div>

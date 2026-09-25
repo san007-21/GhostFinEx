@@ -8,6 +8,7 @@
  */
 import { formatCurrency } from './format'
 import {
+  expensesInMonth,
   roundMoney,
   subscriptionBurden,
 } from './finance'
@@ -49,32 +50,33 @@ export function buildInsights({ profile, expenses, goals, subscriptions, overvie
     )
   }
 
-  /* Balance warnings */
-  if (overview.remainingBalance < 0) {
+  /* Balance warnings — balance comes from accounts (manually maintained) */
+  if (overview.availableBalance < 0) {
     push(
       'danger',
       'Balance is negative',
-      `After logged expenses, ${formatCurrency(overview.remainingBalance, { compact: true })} remains of your available balance. Check for expenses logged in error or plan a top-up.`,
-      '/expenses',
+      `Your accounts total ${formatCurrency(overview.availableBalance, { compact: true })}. Check for entries logged in error, or plan a top-up.`,
+      '/accounts',
       'balance',
     )
-  } else if (overview.availableBalance > 0 && overview.remainingBalance / overview.availableBalance < 0.2) {
+  } else if (overview.projectedEndOfMonth < 0) {
     push(
       'warn',
-      'Balance is running low',
-      `Only ${formatCurrency(overview.remainingBalance, { compact: true })} of your ${formatCurrency(profile.availableBalance, { compact: true })} balance is left after this month's spending.`,
-      '/expenses',
+      'Balance projected to run out',
+      `At plan pace (income − budget) your balance of ${formatCurrency(overview.availableBalance, { compact: true })} would land at ${formatCurrency(overview.projectedEndOfMonth, { compact: true })} by month end. Adjust spending or the budget.`,
+      '/overview',
       'balance',
     )
   }
 
-  /* Biggest category */
-  const byCategory = expensesByCategorySorted(expenses)
-  if (byCategory.length > 0 && overview.totalSpent > 0) {
+  /* Biggest category — this month only, to match every monthly figure */
+  const monthExpenses = expensesInMonth(expenses)
+  const byCategory = expensesByCategorySorted(monthExpenses)
+  if (byCategory.length > 0 && overview.monthSpent > 0) {
     push(
       'info',
-      `${byCategory[0].category} is your biggest category`,
-      `${formatCurrency(byCategory[0].total, { compact: true })} — ${Math.round((byCategory[0].total / overview.totalSpent) * 100)}% of all spending this month.`,
+      `${byCategory[0].category} is your biggest category this month`,
+      `${formatCurrency(byCategory[0].total, { compact: true })} — ${Math.round((byCategory[0].total / overview.monthSpent) * 100)}% of spending this month.`,
       '/spending',
       'spending',
     )
@@ -86,7 +88,7 @@ export function buildInsights({ profile, expenses, goals, subscriptions, overvie
     const gap = roundMoney(goal.target - goal.saved)
     const weeks = Math.max(1, Math.ceil((new Date(goal.targetDate) - new Date()) / (7 * 24 * 60 * 60 * 1000)))
     const weekly = roundMoney(gap / weeks)
-    if (weekly * 4.33 > Math.max(overview.monthlyIncome - overview.totalSpent, 0)) {
+    if (weekly * 4.33 > Math.max(overview.monthlyIncome - overview.monthSpent, 0)) {
       push(
         'info',
         `"${goal.name}" needs ${formatCurrency(weekly, { compact: true })} per week`,

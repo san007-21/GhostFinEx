@@ -40,10 +40,21 @@ export function expensesByCategory(expenses) {
     .map(([category, total]) => ({ category, total }))
 }
 
+/**
+ * Parse 'YYYY-MM-DD' as LOCAL calendar parts. new Date('YYYY-MM-DD') parses
+ * as UTC midnight, which can shift the day (and even the month) in timezones
+ * away from UTC — month filtering must never depend on the viewer's zone.
+ */
+function parseIsoDay(iso) {
+  const [year, month, day] = String(iso).split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
 /** Expenses that fall in the same calendar month as `reference` (default now). */
 export function expensesInMonth(expenses, reference = new Date()) {
   return expenses.filter((expense) => {
-    const d = new Date(expense.date)
+    if (!expense.date) return false
+    const d = parseIsoDay(expense.date)
     return (
       d.getMonth() === reference.getMonth() &&
       d.getFullYear() === reference.getFullYear()
@@ -56,24 +67,41 @@ export function expensesInMonth(expenses, reference = new Date()) {
 /**
  * The central derived snapshot for the whole app. Every view reads the same
  * numbers from here so nothing can drift out of sync.
+ *
+ * SOURCE-OF-TRUTH MODEL (explicit):
+ * - profile.availableBalance = sum of ACCOUNT balances = money currently held.
+ *   Accounts are manually maintained current balances; the expense ledger is a
+ *   parallel record and is NEVER subtracted from them again here (that would
+ *   double-count spending already reflected in the balance the user maintains).
+ * - totalSpent = ALL-TIME ledger total (ledger history).
+ * - monthSpent = THIS calendar month's ledger total — the only spending figure
+ *   that may be compared with monthly budget/income.
+ * - budgetRemaining / budgetUsed / overBudget / savingsThisMonth are MONTHLY
+ *   concepts and use monthSpent only.
+ * - projectedEndOfMonth = money now + (income − budget): where the balance
+ *   lands if the rest of the month goes exactly to plan. It is a projection,
+ *   not a current balance.
+ * Pass `reference` to pin the month (tests); defaults to now.
  */
-export function deriveOverview({ profile, expenses }) {
+export function deriveOverview({ profile, expenses }, reference = new Date()) {
   const totalSpent = sumExpenses(expenses)
-  const remainingBalance = roundMoney(profile.availableBalance - totalSpent)
-  const budgetRemaining = roundMoney(profile.monthlyBudget - totalSpent)
-  const budgetUsed = profile.monthlyBudget > 0 ? totalSpent / profile.monthlyBudget : 0
-  const projectedEndOfMonth = roundMoney(profile.availableBalance - Math.max(totalSpent, 0))
+  const monthExpenses = expensesInMonth(expenses, reference)
+  const monthSpent = sumAmounts(monthExpenses.map((e) => e.amount))
+  const availableBalance = roundMoney(profile.availableBalance)
+  const budgetRemaining = roundMoney(profile.monthlyBudget - monthSpent)
+  const budgetUsed = profile.monthlyBudget > 0 ? monthSpent / profile.monthlyBudget : 0
   return {
     monthlyIncome: profile.monthlyIncome,
-    availableBalance: profile.availableBalance,
+    availableBalance,
     monthlyBudget: profile.monthlyBudget,
     totalSpent,
-    remainingBalance,
+    monthSpent,
+    monthExpenseCount: monthExpenses.length,
     budgetRemaining,
     budgetUsed,
     overBudget: budgetRemaining < 0,
-    savingsThisMonth: roundMoney(profile.monthlyIncome - totalSpent),
-  projectedEndOfMonth,
+    savingsThisMonth: roundMoney(profile.monthlyIncome - monthSpent),
+    projectedEndOfMonth: roundMoney(availableBalance + monthlyNet(profile.monthlyIncome, profile.monthlyBudget)),
   }
 }
 
@@ -89,7 +117,9 @@ export function weeklyAmountNeeded(target, saved, weeksLeft) {
 }
 
 export function weeksUntil(date, from = new Date()) {
+  if (!date) return 0
   const target = new Date(date)
+  if (Number.isNaN(target.getTime())) return 0
   const diff = target.getTime() - from.getTime()
   if (diff <= 0) return 0
   return Math.max(1, Math.ceil(diff / (7 * 24 * 60 * 60 * 1000)))
@@ -228,10 +258,11 @@ export function savingsPlan(price, alreadySaved, monthlySaving, freeMonthlyIncom
  * - leftoverCash: income − expenses — potential savings, NOT savings.
  * - totalSaved: money recorded as saved across goals.
  */
-export function savingsOverview({ contributions, goals, net }) {
-  const reference = new Date()
+export function savingsOverview({ contributions, goals, net }, reference = new Date()) {
   const thisMonth = contributions.filter((c) => {
-    const d = new Date(c.date)
+    if (!c.date) return false
+    const [year, month, day] = String(c.date).split('-').map(Number)
+    const d = new Date(year, month - 1, day) // local parse — see expensesInMonth
     return d.getMonth() === reference.getMonth() && d.getFullYear() === reference.getFullYear()
   })
   const contributionsThisMonth = sumAmounts(thisMonth.map((c) => c.amount))
@@ -261,11 +292,15 @@ export function simulateScenario(state, scenario) {
   const effects = []
 
   if (scenario.type === 'purchase' && scenario.price > 0) {
+    const priceSafe = roundMoney(scenario.price)
     simExpenses = [
-      { id: 'sim-purchase', name: scenario.name || 'Hypothetical purchase', amount: roundMoney(scenario.price), category: 'Shopping', date: new Date().toISOString().slice(0, 10) },
+      { id: 'sim-purchase', name: scenario.name || 'Hypothetical purchase', amount: priceSafe, category: 'Shopping', date: new Date().toISOString().slice(0, 10) },
       ...expenses,
     ]
-    effects.push(`Adds ${roundMoney(scenario.price)} as a one-off expense`)
+    // Buying now means paying now: the simulated balance drops by the price.
+    // (Accounts are the balance truth; the ledger only records spending.)
+    simProfile = { ...simProfile, availableBalance: roundMoney((simProfile.availableBalance ?? 0) - priceSafe) }
+    effects.push(`Pays ${priceSafe} from your balance and logs it as this month's spending`)
   }
 
   if (scenario.type === 'expense' && scenario.amount > 0) {

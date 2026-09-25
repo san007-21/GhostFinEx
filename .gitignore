@@ -19,3 +19,8 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local Supabase Edge Function secrets
+supabase/functions/.env
+frontend/supabase/functions/.env
+backend/.env

@@ -76,7 +76,8 @@ export function NumberField({ label, value, onChange, min = 0, max, step = 1, pr
           value={draft}
           min={min}
           step={step}
-          onChange={(e) => {
+          readOnly={props.readOnly ?? false}
+          onChange={props.readOnly ? undefined : (e) => {
             const raw = e.target.value
             if (raw !== '' && !/^-?\d*\.?\d*$/.test(raw)) return
             if (raw !== '' && !Number.isFinite(Number(raw))) return

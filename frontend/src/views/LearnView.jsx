@@ -2,6 +2,7 @@ import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import Card from '../components/ui/Card.jsx'
 import { Badge, Button, Disclaimer, ProgressBar } from '../components/ui/Primitives.jsx'
+import BooksSection from '../components/books/BooksSection.jsx'
 
 const GLOSSARY = [
   { term: 'Zero-based budget', definition: 'Every rand of income gets a planned job — spending, saving, or sharing — until nothing is left unassigned.' },
@@ -82,6 +83,18 @@ export default function LearnView({ finance }) {
             </Card>
           )
         })}
+      </div>
+
+      <div id="books" className="my-8 border-t border-[var(--gfx-border)] pt-8">
+        <BooksSection
+          lessons={lessons}
+          onOpenLesson={(lessonId) => {
+            setOpenId(lessonId)
+            if (typeof window !== 'undefined') {
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }
+          }}
+        />
       </div>
 
       <Card title="Plain-language glossary" subtitle="Five terms that unlock most of personal finance">

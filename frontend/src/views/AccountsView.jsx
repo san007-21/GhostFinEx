@@ -52,7 +52,7 @@ export default function AccountsView({ finance }) {
     <div>
       <PageHeader
         title="Accounts"
-        subtitle="Where your money is held — balances you enter and edit yourself. No bank connections."
+        subtitle="Where your money is held — current balances you enter and update yourself. No bank connections, no automatic transaction syncing."
       >
         <Button onClick={openAddModal}>+ Add account</Button>
       </PageHeader>
@@ -136,9 +136,10 @@ export default function AccountsView({ finance }) {
 
       <div className="mt-6">
         <Disclaimer>
-          Account balances are manual entries stored only in your browser. GhostFinEx does not
-          connect to banks, sync transactions, or fetch balances — you stay in control of every
-          number.
+          Account balances are the current amounts you hold — you enter and update them yourself.
+          Logging an expense or a savings contribution records history; it never silently changes
+          these balances. GhostFinEx does not connect to banks or sync transactions — you stay in
+          control of every number.
         </Disclaimer>
       </div>
     </div>

@@ -60,9 +60,9 @@ export default function ExpensesView({ finance }) {
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Expenses logged" value={String(expenses.length)} sub={`${filtered.length} shown`} />
-        <StatCard label="Total spent" value={formatCurrency(overview.totalSpent, { compact: true })} sub="all categories" />
-        <StatCard label="Budget remaining" value={formatCurrency(overview.budgetRemaining, { compact: true })} tone={overview.overBudget ? 'danger' : 'accent'} sub={`${Math.round(overview.budgetUsed * 100)}% of budget used`} />
-        <StatCard label="Balance remaining" value={formatCurrency(overview.remainingBalance, { compact: true })} tone={overview.remainingBalance < 0 ? 'danger' : 'default'} sub={`of ${formatCurrency(finance.profile.availableBalance, { compact: true })}`} />
+        <StatCard label="Total spent (all time)" value={formatCurrency(overview.totalSpent, { compact: true })} sub="all categories, whole ledger" />
+        <StatCard label="Budget remaining" value={formatCurrency(overview.budgetRemaining, { compact: true })} tone={overview.overBudget ? 'danger' : 'accent'} sub={`${Math.round(overview.budgetUsed * 100)}% of budget used this month`} />
+        <StatCard label="Balance remaining" value={formatCurrency(overview.availableBalance, { compact: true })} tone={overview.availableBalance < 0 ? 'danger' : 'default'} sub="from your accounts — see Accounts view" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

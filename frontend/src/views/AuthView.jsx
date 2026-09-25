@@ -2,15 +2,15 @@ import { useState } from 'react'
 import Card from '../components/ui/Card.jsx'
 import { Alert, Button, Disclaimer, TextField } from '../components/ui/Primitives.jsx'
 import { useAuth } from '../auth/useAuth.js'
+import { isSupabaseConfigured } from '../lib/supabase'
 import { IconGhost } from '../components/ui/icons.jsx'
 
 /**
- * Account / sign-in UI shell. Mocked end to end: credentials are checked for
- * shape only (never security), no data leaves the browser, and demo mode
- * works without any account. When Supabase Auth lands, only the auth layer
- * changes — this view keeps its form and simply calls the real client.
+ * Account / sign-in UI. Backed by real Supabase Auth when configured; when
+ * the env vars are absent the view explains how to enable it and the app
+ * continues to work in demo mode.
  */
-export default function AuthView({ finance, onNavigate }) {
+export default function AuthView({ onNavigate }) {
   const auth = useAuth()
   const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
@@ -34,8 +34,6 @@ export default function AuthView({ finance, onNavigate }) {
       } else {
         await auth.signUp(email, password, displayName)
       }
-      const name = (displayName || email.split('@')[0]).trim()
-      if (name) finance.updateProfile({ displayName: name })
       onNavigate('dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -64,13 +62,23 @@ export default function AuthView({ finance, onNavigate }) {
         </h2>
         <p className="mt-1 text-sm text-[var(--gfx-muted)]">
           {auth.isDemo
-            ? 'Everything works in demo mode. An account will later sync your data across devices.'
-            : 'This is a mocked session — sign out to return to demo mode.'}
+            ? 'Demo data stays in this browser. Sign in to keep your finances in sync.'
+            : 'Your data is stored in your own private account.'}
         </p>
       </div>
 
+      {!isSupabaseConfigured && (
+        <div className="mb-4">
+          <Alert tone="info" title="Authentication is not configured on this build">
+            Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to your
+            environment (see <code>.env.example</code>) to enable real accounts. Demo mode keeps
+            working meanwhile.
+          </Alert>
+        </div>
+      )}
+
       {auth.isDemo ? (
-        <Card title={mode === 'signin' ? 'Sign in' : 'Create an account'} subtitle="Prototype authentication — no real accounts exist yet">
+        <Card title={mode === 'signin' ? 'Sign in' : 'Create an account'} subtitle="Your financial records belong only to your account">
           <div className="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-1" role="tablist" aria-label="Authentication mode">
             <button
               type="button"
@@ -118,7 +126,9 @@ export default function AuthView({ finance, onNavigate }) {
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
               />
             </label>
-            {error && <p role="alert" className="text-sm text-[var(--gfx-danger)]">{error}</p>}
+            {error && (
+              <Alert tone="danger" title="That didn't work">{error}</Alert>
+            )}
             <Button type="submit" size="lg" className="w-full" disabled={busy}>
               {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </Button>
@@ -133,18 +143,9 @@ export default function AuthView({ finance, onNavigate }) {
           <Button variant="secondary" size="lg" className="w-full" onClick={continueAsDemo}>
             Continue in demo mode
           </Button>
-
-          {auth.isDemo && (
-            <div className="mt-4">
-              <Alert tone="info" title="Demo data">
-                Your entries are stored only in this browser. Signing in (later, with a real
-                account) is what will move them to a server.
-              </Alert>
-            </div>
-          )}
         </Card>
       ) : (
-        <Card title="Your session" subtitle="Mocked for the frontend phase">
+        <Card title="Your session" subtitle="Authenticated with Supabase">
           <dl className="space-y-3 text-sm">
             <div className="flex justify-between gap-3">
               <dt className="text-[var(--gfx-muted)]">Name</dt>
@@ -156,7 +157,7 @@ export default function AuthView({ finance, onNavigate }) {
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-[var(--gfx-muted)]">Provider</dt>
-              <dd><span className="text-[var(--gfx-muted)]">{auth.session?.provider} (mock)</span></dd>
+              <dd><span className="text-[var(--gfx-muted)]">supabase</span></dd>
             </div>
           </dl>
           <div className="mt-5 flex justify-end">
@@ -167,9 +168,8 @@ export default function AuthView({ finance, onNavigate }) {
 
       <div className="mt-6">
         <Disclaimer>
-          Authentication is a frontend shell: credentials are validated for shape only, nothing is
-          sent to a server, and no secrets are stored. A real provider will replace this layer
-          without changing how the app works.
+          Only the public Supabase anon key is used in this app. Passwords are verified by
+          Supabase Auth — they are never stored, logged, or processed by GhostFinEx itself.
         </Disclaimer>
       </div>
     </div>

@@ -32,8 +32,8 @@ export default function WhatIfView({ finance }) {
 
   const actualNet = monthlyNet(profile.monthlyIncome, profile.monthlyBudget)
   const simNet = monthlyNet(sim.profile.monthlyIncome, sim.profile.monthlyBudget)
-  const actualPath = useMemo(() => projectBalance(Math.max(overview.remainingBalance, 0), actualNet, 6), [overview.remainingBalance, actualNet])
-  const simPath = useMemo(() => projectBalance(Math.max(sim.overview.remainingBalance, 0), simNet, 6), [sim.overview.remainingBalance, simNet])
+  const actualPath = useMemo(() => projectBalance(Math.max(overview.availableBalance, 0), actualNet, 6), [overview.availableBalance, actualNet])
+  const simPath = useMemo(() => projectBalance(Math.max(sim.overview.projectedEndOfMonth, 0), simNet, 6), [sim.overview.projectedEndOfMonth, simNet])
 
   const scenarioLabel = {
     purchase: 'Hypothetical purchase',
@@ -129,9 +129,9 @@ export default function WhatIfView({ finance }) {
                 </div>
                 <dl className="tabular space-y-2.5 text-sm">
                   <Row label="Available balance" value={formatCurrency(overview.availableBalance, { compact: true })} />
-                  <Row label="Spent this month" value={formatCurrency(overview.totalSpent, { compact: true })} />
+                  <Row label="Spent this month" value={formatCurrency(overview.monthSpent, { compact: true })} />
                   <Row label="Budget remaining" value={formatCurrency(overview.budgetRemaining, { compact: true })} tone={overview.overBudget ? 'danger' : 'accent'} />
-                  <Row label="Balance after expenses" value={formatCurrency(overview.remainingBalance, { compact: true })} tone={overview.remainingBalance < 0 ? 'danger' : 'default'} />
+                  <Row label="Projected month-end balance" value={formatCurrency(overview.projectedEndOfMonth, { compact: true })} tone={overview.projectedEndOfMonth < 0 ? 'danger' : 'default'} />
                   <Row label="Monthly net (income − budget)" value={formatCurrency(actualNet, { compact: true })} tone={actualNet >= 0 ? 'accent' : 'danger'} />
                 </dl>
               </div>
@@ -143,9 +143,9 @@ export default function WhatIfView({ finance }) {
                 </div>
                 <dl className="tabular space-y-2.5 text-sm">
                   <SimRow label="Balance after" value={formatCurrency(sim.overview.availableBalance, { compact: true })} delta={roundMoney(sim.overview.availableBalance - overview.availableBalance)} />
-                  <SimRow label="Spent this month" value={formatCurrency(sim.overview.totalSpent, { compact: true })} delta={roundMoney(sim.overview.totalSpent - overview.totalSpent)} />
+                  <SimRow label="Spent this month" value={formatCurrency(sim.overview.monthSpent, { compact: true })} delta={roundMoney(sim.overview.monthSpent - overview.monthSpent)} />
                   <SimRow label="Budget remaining" value={formatCurrency(sim.overview.budgetRemaining, { compact: true })} delta={roundMoney(sim.overview.budgetRemaining - overview.budgetRemaining)} tone={sim.overview.overBudget ? 'danger' : 'accent'} />
-                  <SimRow label="Balance after expenses" value={formatCurrency(sim.overview.remainingBalance, { compact: true })} delta={roundMoney(sim.overview.remainingBalance - overview.remainingBalance)} tone={sim.overview.remainingBalance < 0 ? 'danger' : 'default'} />
+                  <SimRow label="Projected month-end balance" value={formatCurrency(sim.overview.projectedEndOfMonth, { compact: true })} delta={roundMoney(sim.overview.projectedEndOfMonth - overview.projectedEndOfMonth)} tone={sim.overview.projectedEndOfMonth < 0 ? 'danger' : 'default'} />
                   <SimRow label="Monthly net" value={formatCurrency(simNet, { compact: true })} delta={roundMoney(simNet - actualNet)} tone={simNet >= 0 ? 'accent' : 'danger'} />
                 </dl>
               </div>
@@ -167,10 +167,10 @@ export default function WhatIfView({ finance }) {
                 <span className="h-2 w-2 rounded-full bg-[var(--gfx-violet)]" /> Simulated
               </span>
             </div>
-            {sim.overview.remainingBalance < 0 && (
+            {sim.overview.projectedEndOfMonth < 0 && (
               <div className="mt-3">
                 <Alert tone="danger" title="This scenario goes negative">
-                  The simulated balance after expenses is {formatCurrency(sim.overview.remainingBalance, { compact: true })} — the trajectory trends below zero.
+                  The simulated month-end balance is {formatCurrency(sim.overview.projectedEndOfMonth, { compact: true })} — the trajectory trends below zero.
                 </Alert>
               </div>
             )}

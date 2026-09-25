@@ -16,6 +16,8 @@ export const DEMO_PROFILE = {
   displayName: 'Demo Student',
   currency: 'ZAR',
   monthlyIncome: 4200,
+  // Derived at runtime from the account balances below (kept in the seed only
+  // for shape parity) — account balances are the source of truth for money held.
   availableBalance: 2860,
   monthlyBudget: 3800,
 }
@@ -91,12 +93,18 @@ export const DEMO_GOALS = [
 /** Account types the Accounts view supports. Frontend-only — no bank links. */
 export const ACCOUNT_TYPES = ['Cash', 'Bank account', 'Savings account', 'Other']
 
+/*
+ * Demo accounts sum to exactly the profile's derived available balance
+ * (1270 + 140 + 1450 = 2860) so every dashboard number stays hand-checkable.
+ * Balances are manually maintained by the user — logging an expense or a
+ * savings contribution never silently changes them.
+ */
 export const DEMO_ACCOUNTS = [
   {
     id: 'acc-001',
     name: 'Everyday card',
     type: 'Bank account',
-    balance: 2860,
+    balance: 1270,
     note: 'Where income lands; card payments come off here.',
   },
   {

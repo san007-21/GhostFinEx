@@ -6,7 +6,7 @@ import { Badge, Button, Disclaimer, NumberField, StatCard } from '../components/
 import { MonthlyColumns } from '../components/charts/Charts.jsx'
 import { formatCurrency, formatPercent } from '../lib/format'
 import { expensesInMonth } from '../lib/finance'
-import { recentMonths } from '../lib/calendar'
+import { parseIsoDate, recentMonths } from '../lib/calendar'
 
 export default function OverviewView({ finance }) {
   const { profile, expenses, overview, setIncome, setBalance, setBudget } = finance
@@ -16,7 +16,9 @@ export default function OverviewView({ finance }) {
   const months = recentMonths(6)
   const spendByMonth = new Map()
   for (const e of expenses) {
-    const key = `${new Date(e.date).getFullYear()}-${new Date(e.date).getMonth() + 1}`
+    // Local parse: new Date('YYYY-MM-DD') is UTC and can shift the month key.
+    const d = parseIsoDate(e.date)
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}`
     spendByMonth.set(key, (spendByMonth.get(key) ?? 0) + e.amount)
   }
 
@@ -31,12 +33,12 @@ export default function OverviewView({ finance }) {
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Monthly income" value={formatCurrency(profile.monthlyIncome, { compact: true })} sub="editable below" />
-        <StatCard label="Total spent" value={formatCurrency(overview.totalSpent, { compact: true })} sub={`${monthExpenses.length} expenses logged`} />
+        <StatCard label="Spent this month" value={formatCurrency(overview.monthSpent, { compact: true })} sub={`${monthExpenses.length} expenses logged this month`} />
         <StatCard
-          label="Remaining balance"
-          value={formatCurrency(overview.remainingBalance, { compact: true })}
-          sub={`from ${formatCurrency(profile.availableBalance, { compact: true })} available`}
-          tone={overview.remainingBalance < 0 ? 'danger' : 'accent'}
+          label="Current balance"
+          value={formatCurrency(overview.availableBalance, { compact: true })}
+          sub="from your accounts — see Accounts view"
+          tone={overview.availableBalance < 0 ? 'danger' : 'accent'}
         />
         <StatCard
           label="Budget remaining"
@@ -50,7 +52,16 @@ export default function OverviewView({ finance }) {
         <Card title="Your numbers" subtitle="Edit any value — totals update everywhere">
           <div className="grid gap-4 sm:grid-cols-3">
             <NumberField label="Income / month" value={profile.monthlyIncome} onChange={setIncome} step={100} prefix="R" />
-            <NumberField label="Available balance" value={profile.availableBalance} onChange={setBalance} step={100} prefix="R" hint="Money you have right now" />
+            <NumberField
+              label="Available balance"
+              value={profile.availableBalance}
+              onChange={setBalance}
+              step={100}
+              prefix="R"
+              readOnly
+              className="cursor-default opacity-90"
+              hint="Sum of your account balances — edit them in the Accounts view"
+            />
             <NumberField label="Monthly budget" value={profile.monthlyBudget} onChange={setBudget} step={50} prefix="R" hint="Your spending plan" />
           </div>
           <dl className="mt-5 grid gap-3 border-t border-[var(--gfx-border)] pt-4 text-sm sm:grid-cols-2">
@@ -61,7 +72,7 @@ export default function OverviewView({ finance }) {
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--gfx-muted)]">Remaining cash (income − spent)</dt>
+              <dt className="text-[var(--gfx-muted)]">Remaining cash (income − spent this month)</dt>
               <dd className={`tabular font-medium ${overview.savingsThisMonth >= 0 ? 'text-[var(--gfx-accent)]' : 'text-[var(--gfx-danger)]'}`}>
                 {formatCurrency(overview.savingsThisMonth, { compact: true })}
               </dd>
@@ -79,25 +90,25 @@ export default function OverviewView({ finance }) {
           </dl>
         </Card>
 
-        <Card title="6-month spending trend" subtitle="Current month from your ledger; earlier months are demo history">
+        <Card title="6-month spending trend" subtitle="Each month from your ledger — no mixed scopes">
           <MonthlyColumns
             months={months}
-            valueByMonth={(m) => {
-              const key = `${m.year}-${m.month}`
-              const isCurrent = m.year === new Date().getFullYear() && m.month === new Date().getMonth() + 1
-              return isCurrent ? overview.totalSpent : (spendByMonth.get(key) ?? 0)
-            }}
+            valueByMonth={(m) => spendByMonth.get(`${m.year}-${m.month}`) ?? 0}
           />
+
+          <p className="mt-3 text-xs text-[var(--gfx-faint)]">All-time ledger total: {formatCurrency(overview.totalSpent, { compact: true })} across {expenses.length} expenses.</p>
         </Card>
       </div>
 
       <Card title="How the math works" subtitle="No hidden logic — here is every formula" className="mb-6">
         <ul className="space-y-2 text-sm text-[var(--gfx-muted)]">
-          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Remaining balance = available balance − total expenses</li>
-          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Budget remaining = monthly budget − total expenses</li>
-          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Remaining cash = monthly income − total expenses (potential savings — not savings until you record a contribution)</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Current balance = sum of your account balances (maintained in Accounts)</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Spent this month = expenses dated in this calendar month</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Budget remaining = monthly budget − spent this month</li>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Remaining cash = monthly income − spent this month (potential savings — not savings until you record a contribution)</li>
           <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Monthly net = monthly income − monthly budget</li>
-        </ul>
+          <li className="flex gap-2"><span className="text-[var(--gfx-accent)]">•</span> Projected month-end balance = current balance + monthly net</li>
+ </ul>
         <div className="mt-4">
           <Button variant="secondary" size="sm" onClick={() => setConfirmingReset(true)}>
             Reset all data to demo seed

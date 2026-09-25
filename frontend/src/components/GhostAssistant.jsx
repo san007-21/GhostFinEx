@@ -3,7 +3,12 @@ import { Button } from './ui/Primitives.jsx'
 import { IconGhost, IconSend, IconX } from './ui/icons.jsx'
 import { formatCurrency } from '../lib/format'
 import { buildInsights } from '../lib/insights'
-import { monthlyNet, roundMoney, subscriptionBurden } from '../lib/finance'
+import { expensesInMonth, monthlyNet, roundMoney, subscriptionBurden, affordabilityAnalysis } from '../lib/finance'
+import { classifyIntent } from '../lib/webIntent'
+import { searchWeb } from '../lib/webSearch'
+import { priceSignal, describePriceSignal, domainOf } from '../lib/priceSignals'
+import { stashPriceSuggestion } from '../lib/priceHandoff'
+import { useAuth } from '../auth/useAuth.js'
 
 /**
  * Ghost assistant — the UI surface for decision support.
@@ -17,12 +22,14 @@ const SUGGESTED_PROMPTS = [
   'How am I doing this month?',
   'What subscriptions could I cut?',
   'Where is my money going?',
-  'Can I afford a big purchase?',
+  'Current price of a refurbished laptop?',
 ]
 
-export default function GhostAssistant({ open, onClose, finance }) {
+export default function GhostAssistant({ open, onClose, finance, onNavigate }) {
+  const auth = useAuth()
   const [messages, setMessages] = useState(finance.ghostDemoConversation)
   const [draft, setDraft] = useState('')
+  const [webBusy, setWebBusy] = useState(false)
   const listRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -50,7 +57,7 @@ export default function GhostAssistant({ open, onClose, finance }) {
     const insights = buildInsights({ profile, expenses, goals, subscriptions, overview })
 
     if (q.includes('month') || q.includes('doing') || q.includes('how am i')) {
-      return `You have spent ${formatCurrency(overview.totalSpent, { compact: true })} of your ${formatCurrency(profile.monthlyBudget, { compact: true })} budget (${Math.round(overview.budgetUsed * 100)}%). Balance after expenses: ${formatCurrency(overview.remainingBalance, { compact: true })}. ${overview.overBudget ? 'You are over budget — the Spending view shows where it went.' : 'You are still inside your budget.'}`
+      return `This month you have spent ${formatCurrency(overview.monthSpent, { compact: true })} of your ${formatCurrency(profile.monthlyBudget, { compact: true })} budget (${Math.round(overview.budgetUsed * 100)}%). You currently hold ${formatCurrency(overview.availableBalance, { compact: true })} across your accounts. ${overview.overBudget ? 'You are over budget — the Spending view shows where it went.' : 'You are still inside your budget.'}`
     }
     if (q.includes('subscription') || q.includes('cut') || q.includes('cancel')) {
       if (subscriptions.length === 0) return 'You have no subscriptions tracked yet — add some in the Subscriptions view and I can point out the heavy ones.'
@@ -72,19 +79,94 @@ export default function GhostAssistant({ open, onClose, finance }) {
     }
     if (q.includes('where') || q.includes('going') || q.includes('spend')) {
       if (expenses.length === 0) return 'No expenses logged yet, so I cannot break down spending. Add some in the Expenses view.'
+      const monthOnly = expensesInMonth(expenses)
       const map = new Map()
-      for (const e of expenses) map.set(e.category, roundMoney((map.get(e.category) ?? 0) + e.amount))
+      for (const e of monthOnly) map.set(e.category, roundMoney((map.get(e.category) ?? 0) + e.amount))
       const top = [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
-      return `Your top three spending categories: ${top.map(([cat, val]) => `${cat} at ${formatCurrency(val, { compact: true })}`).join(', ')}. The Spending breakdown view has the full picture.`
+      if (top.length === 0) return 'Nothing logged this month yet — the Spending breakdown has your all-time picture.'
+      return `This month's top three spending categories: ${top.map(([cat, val]) => `${cat} at ${formatCurrency(val, { compact: true })}`).join(', ')}. The Spending breakdown view has the full picture.`
     }
     return `Here is what stands out right now: ${insights[0].title.toLowerCase()} — ${insights[0].detail} (All answers are computed from your own entries — no AI model, no data leaves your browser.)`
   }
 
-  const send = (text) => {
+  const send = async (text) => {
     const question = text.trim()
-    if (!question) return
+    if (!question || webBusy) return
     setMessages((prev) => [...prev, { id: `q-${Date.now()}`, role: 'user', text: question }])
     setDraft('')
+
+    // Deterministic routing: only current-web questions reach the search
+    // provider — personal and knowledge questions never leave the app.
+    const intent = classifyIntent(question)
+    if (intent.type === 'knowledge') {
+      // Stable-concept question: the RAG knowledge library is not wired into
+      // the runtime yet — Ghost says so instead of improvising.
+      setTimeout(() => {
+        setMessages((prev) => [...prev, {
+          id: `a-${Date.now()}`,
+          role: 'ghost',
+          text: 'That is a knowledge question, and my full financial-education library is not connected in this build yet — I won\'t improvise an answer. The Learning hub covers the basics (budgeting, emergency funds, compounding) in the meantime.',
+        }])
+      }, 220)
+      return
+    }
+    if (intent.needsWeb) {
+      if (!auth || auth.isDemo || !auth.user || auth.user.isDemo) {
+        setTimeout(() => {
+          setMessages((prev) => [...prev, {
+            id: `a-${Date.now()}`,
+            role: 'ghost',
+            text: 'Current-web search needs a signed-in account (it calls a search service on the server). Your own numbers work right here in demo mode — ask me about your budget, goals, or subscriptions.',
+          }])
+        }, 220)
+        return
+      }
+      setWebBusy(true)
+      const { data, error } = await searchWeb(intent.searchQuery || question)
+      setWebBusy(false)
+      if (error) {
+        setMessages((prev) => [...prev, {
+          id: `a-${Date.now()}`,
+          role: 'ghost',
+          text: `I couldn't search the web just now — ${error} Everything about your own money still works: ask me about your month any time.`,
+        }])
+        return
+      }
+      if (!data || data.results.length === 0) {
+        setMessages((prev) => [...prev, {
+          id: `a-${Date.now()}`,
+          role: 'ghost',
+          text: 'The web search found nothing useful for that — I won\'t guess a price. Try naming the exact product, or search from the Smart Shopping view.',
+        }])
+        return
+      }
+      const signal = priceSignal(data.results)
+      const priceLine = describePriceSignal(signal)
+      let affordabilityLine = ''
+      let handoff = false
+      if (intent.type === 'combined' && signal.state === 'single' && Number.isFinite(signal.price)) {
+        const analysis = affordabilityAnalysis({
+          price: signal.price,
+          availableBalance: finance.profile.availableBalance,
+          monthlyBudget: finance.profile.monthlyBudget,
+          monthlyIncome: finance.profile.monthlyIncome,
+        })
+        affordabilityLine = analysis.fitsNow
+          ? ` At that price your balance would cover it, leaving ${formatCurrency(analysis.remainingAfterPurchase, { compact: true })}.`
+          : ` At that price your balance is ${formatCurrency(Math.abs(analysis.remainingAfterPurchase), { compact: true })} short.`
+        handoff = stashPriceSuggestion({ price: signal.price, label: data.query, sourceDomain: signal.sourceDomain, sourceUrl: signal.sourceUrl })
+      }
+      setMessages((prev) => [...prev, {
+        id: `a-${Date.now()}`,
+        role: 'ghost',
+        kind: 'web',
+        text: `${priceLine}${affordabilityLine}\n\nPrices come from live web snippets, may be outdated or regional, and are never invented by me — verify on the source page before deciding.${data.cached ? ' (Reusing a recent search to save quota.)' : ''}`,
+        sources: data.results.slice(0, 3).map((r) => ({ title: r.title, url: r.url, domain: domainOf(r.url) })),
+        handoff,
+      }])
+      return
+    }
+
     // Deterministic reply, computed synchronously from local state.
     setTimeout(() => {
       setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: 'ghost', text: answer(question) }])
@@ -135,7 +217,38 @@ export default function GhostAssistant({ open, onClose, finance }) {
                     : 'rounded-bl-md border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] text-[var(--gfx-muted)]'
                 }`}
               >
+                {message.kind === 'web' && (
+                  <span className="mb-1.5 inline-block rounded-full border border-[rgba(96,165,250,0.35)] bg-[var(--gfx-info-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--gfx-info)]">
+                    Current web research
+                  </span>
+                )}
                 {message.text}
+                {message.sources?.length > 0 && (
+                  <ul className="mt-2 space-y-1 border-t border-[var(--gfx-border)]/60 pt-2">
+                    {message.sources.map((source) => (
+                      <li key={source.url} className="truncate text-xs">
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[var(--gfx-info)] underline-offset-2 hover:underline"
+                        >
+                          {source.domain || source.title}
+                        </a>
+                        <span className="text-[var(--gfx-faint)]"> — {source.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {message.handoff && onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => { onClose(); onNavigate('afford') }}
+                    className="mt-2 rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface)] px-3 py-1.5 text-xs font-medium text-[var(--gfx-accent)] transition-colors hover:border-[var(--gfx-accent-strong)]"
+                  >
+                    Run the full affordability check →
+                  </button>
+                )}
               </div>
             </div>
           ))}

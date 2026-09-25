@@ -9,7 +9,7 @@ import { NAV_ITEMS } from './navItems.js'
  * assistant trigger and demo reset on all. Reset asks for confirmation since
  * it clears user-entered data.
  */
-export default function TopBar({ activeId, onOpenMenu, onOpenGhost, onReset }) {
+export default function TopBar({ activeId, onOpenMenu, onOpenGhost, onReset, isRemote = false, remoteLoading = false }) {
   const [confirmingReset, setConfirmingReset] = useState(false)
   const active = NAV_ITEMS.find((item) => item.id === activeId)
 
@@ -27,6 +27,13 @@ export default function TopBar({ activeId, onOpenMenu, onOpenGhost, onReset }) {
 
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-[var(--gfx-text)]">
           {active?.label ?? 'Dashboard'}
+          {remoteLoading && (
+            <span
+              role="status"
+              aria-label="Loading your data"
+              className="ml-2 inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-[var(--gfx-accent)] align-middle"
+            />
+          )}
         </h1>
 
         <Button variant="secondary" size="sm" onClick={onOpenGhost} className="!rounded-full">
@@ -34,10 +41,12 @@ export default function TopBar({ activeId, onOpenMenu, onOpenGhost, onReset }) {
           <span className="hidden sm:inline">Ask Ghost</span>
         </Button>
 
-        <Button variant="ghost" size="sm" onClick={() => setConfirmingReset(true)} title="Reset all entered values back to the demo seed">
-          <IconReset />
-          <span className="hidden lg:inline">Reset demo</span>
-        </Button>
+        {!isRemote && (
+          <Button variant="ghost" size="sm" onClick={() => setConfirmingReset(true)} title="Reset all entered values back to the demo seed">
+            <IconReset />
+            <span className="hidden lg:inline">Reset demo</span>
+          </Button>
+        )}
       </div>
 
       <ConfirmDialog

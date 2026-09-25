@@ -42,11 +42,11 @@ export default function SpendingView({ finance, onNavigate }) {
       </PageHeader>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <StatCard label="Total spent" value={formatCurrency(overview.totalSpent, { compact: true })} sub={`${expenses.length} expenses`} />
+        <StatCard label="Total spent (all time)" value={formatCurrency(overview.totalSpent, { compact: true })} sub={`${expenses.length} expenses`} />
         <StatCard
           label="Share of income"
-          value={formatPercent(profile.monthlyIncome > 0 ? overview.totalSpent / profile.monthlyIncome : 0)}
-          sub={`of ${formatCurrency(profile.monthlyIncome, { compact: true })}`}
+          value={formatPercent(profile.monthlyIncome > 0 ? overview.monthSpent / profile.monthlyIncome : 0)}
+          sub={`of ${formatCurrency(profile.monthlyIncome, { compact: true })} · this month: ${formatCurrency(overview.monthSpent, { compact: true })}`}
         />
         <StatCard
           label="Share of budget"
@@ -66,7 +66,7 @@ export default function SpendingView({ finance, onNavigate }) {
           )}
         </Card>
 
-        <Card title="All categories" subtitle="Highest to lowest">
+        <Card title="All categories" subtitle="Highest to lowest — whole ledger">
           <CategoryBars data={chartData} tone="info" />
           <p className="mt-4 text-xs text-[var(--gfx-faint)]">
             Categories not shown have no spending logged this month.

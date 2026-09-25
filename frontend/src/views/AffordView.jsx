@@ -4,12 +4,21 @@ import Card from '../components/ui/Card.jsx'
 import { Alert, Badge, Disclaimer, NumberField, TextField } from '../components/ui/Primitives.jsx'
 import { formatCurrency, formatPercent } from '../lib/format'
 import { affordabilityAnalysis, roundMoney } from '../lib/finance'
+import { takePriceSuggestion } from '../lib/priceHandoff'
 
 export default function AffordView({ finance, onNavigate }) {
   const { profile, overview } = finance
 
-  const [name, setName] = useState('')
-  const [price, setPrice] = useState(0)
+  // Consume a web-price handoff once at mount (from Smart Shopping / Ghost):
+  // prefill only — the calculation below always recomputes deterministically
+  // from whatever the user finally submits. Views remount on navigation
+  // (App keys <main> by view id), so mount time is exactly the right moment.
+  const [suggestion] = useState(() => takePriceSuggestion())
+  const [name, setName] = useState(suggestion?.label || '')
+  const [price, setPrice] = useState(suggestion?.price ?? 0)
+  const [webSource] = useState(() =>
+    suggestion ? { domain: suggestion.sourceDomain, url: suggestion.sourceUrl } : null,
+  )
 
   const analysis = useMemo(
     () =>
@@ -63,6 +72,11 @@ export default function AffordView({ finance, onNavigate }) {
             <TextField label="Item name (optional)" value={name} onChange={setName} placeholder="e.g. Refurbished laptop" />
             <NumberField label="Price (R)" value={price} onChange={setPrice} step={100} prefix="R" />
           </div>
+          {webSource && (
+            <p className="text-xs text-[var(--gfx-info)]">
+              Prefilled from current web research{webSource.domain ? ` (${webSource.domain})` : ''} — adjust the price if the source was outdated.
+            </p>
+          )}
           <div className="mt-5 rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-4">
             <p className="text-xs text-[var(--gfx-faint)]">Current available balance</p>
             <p className="tabular text-xl font-semibold text-[var(--gfx-text)]">{formatCurrency(profile.availableBalance)}</p>
@@ -105,9 +119,7 @@ export default function AffordView({ finance, onNavigate }) {
               </div>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-[var(--gfx-muted)]">{verdict}</p>
-          </Card>
-
-          {price > 0 && !analysis.fitsNow && overview.savingsThisMonth > 0 && (
+          </Card>          {price > 0 && !analysis.fitsNow && overview.savingsThisMonth > 0 && (
             <Alert tone="info" title="A savings plan could close the gap">
               You are {formatCurrency(Math.abs(analysis.remainingAfterPurchase), { compact: true })} short. If you saved your full{' '}
               {formatCurrency(overview.savingsThisMonth, { compact: true })} of unspent income this month toward it, the gap would

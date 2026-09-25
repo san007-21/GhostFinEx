@@ -4,6 +4,9 @@ import Card from '../components/ui/Card.jsx'
 import { Alert, Badge, Button, Disclaimer, EmptyState, StatCard } from '../components/ui/Primitives.jsx'
 import { formatCurrency } from '../lib/format'
 import { roundMoney } from '../lib/finance'
+import { searchWeb } from '../lib/webSearch'
+import { priceSignal, describePriceSignal, domainOf } from '../lib/priceSignals'
+import { stashPriceSuggestion } from '../lib/priceHandoff'
 import { IconTag } from '../components/ui/icons.jsx'
 
 function Stars({ rating }) {
@@ -21,6 +24,30 @@ function Stars({ rating }) {
 export default function ShoppingView({ finance, onNavigate }) {
   const { products } = finance
   const [sortBy, setSortBy] = useState('price')
+
+  /* ---- live web search (Tavily via the web-search Edge Function) ---- */
+  const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [webResults, setWebResults] = useState(null) // null = not searched yet
+  const [webError, setWebError] = useState('')
+
+  const runSearch = async (event) => {
+    event?.preventDefault?.()
+    const text = query.trim()
+    if (!text || searching) return
+    setSearching(true)
+    setWebError('')
+    const { data, error } = await searchWeb(text)
+    setSearching(false)
+    if (error) {
+      setWebError(error)
+      setWebResults(null)
+      return
+    }
+    setWebResults(data)
+  }
+
+  const webSignal = useMemo(() => (webResults ? priceSignal(webResults.results) : null), [webResults])
 
   // Comparison math is deterministic over the demo products.
   const rows = useMemo(() => {
@@ -61,11 +88,104 @@ export default function ShoppingView({ finance, onNavigate }) {
         </select>
       </PageHeader>
 
+      <Card title="Search the current web" subtitle="Live product and price research — clearly separate from the demo comparison below" className="mb-6">
+        <form onSubmit={runSearch} className="flex flex-wrap items-end gap-2">
+          <label className="min-w-56 flex-1">
+            <span className="sr-only">Search the web for a product or price</span>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. wireless headphones student deal"
+              className="w-full rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3 py-2 text-sm text-[var(--gfx-text)] placeholder:text-[var(--gfx-faint)] focus:border-[var(--gfx-accent-strong)] focus:outline-none transition-colors"
+            />
+          </label>
+          <Button type="submit" disabled={!query.trim() || searching}>
+            {searching ? 'Searching…' : 'Search the web'}
+          </Button>
+        </form>
+
+        {searching && (
+          <div className="mt-4 space-y-2" aria-live="polite" aria-busy="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="gfx-skeleton h-4 rounded" style={{ width: `${90 - i * 18}%` }} />
+            ))}
+          </div>
+        )}
+
+        {!searching && webError && (
+          <div className="mt-4">
+            <Alert tone="warn" title="Web search unavailable">
+              {webError} The demo comparison below and all of your budgeting tools keep working.
+            </Alert>
+          </div>
+        )}
+
+        {!searching && !webError && webResults && webResults.results.length === 0 && (
+          <div className="mt-4">
+            <EmptyState
+              icon={null}
+              title="No results found"
+              description="The web search returned nothing useful for that query. Try naming the product more specifically."
+            />
+          </div>
+        )}
+
+        {!searching && !webError && webResults && webResults.results.length > 0 && (
+          <div className="mt-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Badge tone="info">Current web research</Badge>
+              <span className="text-xs text-[var(--gfx-faint)]">
+                {webResults.cached ? 'cached from a recent search · ' : ''}
+                {webResults.results.length} sources
+              </span>
+            </div>
+            {webSignal && (
+              <p className="mb-3 rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3 py-2 text-sm text-[var(--gfx-muted)]">
+                <strong className="text-[var(--gfx-text)]">Price signal:</strong> {describePriceSignal(webSignal)}
+                <span className="block text-xs text-[var(--gfx-faint)]">Extracted from source snippets — may be outdated or regional. Verify before deciding.</span>
+              </p>
+            )}
+            <ul className="space-y-2">
+              {webResults.results.slice(0, 5).map((result) => (
+                <li key={result.url} className="rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <a
+                      href={result.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--gfx-accent)] underline-offset-2 hover:underline"
+                    >
+                      {result.title}
+                    </a>
+                    <span className="text-xs text-[var(--gfx-faint)]">{domainOf(result.url)}</span>
+                  </div>
+                  {result.snippet && <p className="mt-1 line-clamp-2 text-xs text-[var(--gfx-muted)]">{result.snippet}</p>}
+                </li>
+              ))}
+            </ul>
+            {webSignal?.state === 'single' && Number.isFinite(webSignal.price) && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    stashPriceSuggestion({ price: webSignal.price, label: webResults.query, sourceDomain: webSignal.sourceDomain, sourceUrl: webSignal.sourceUrl })
+                    onNavigate('afford')
+                  }}
+                >
+                  Run affordability on ~{formatCurrency(webSignal.price, { compact: true })} →
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
+
       <div className="mb-4">
         <Alert tone="info" title="Demo products — not live search results">
           No store or price API is connected in this phase. Names, prices, ratings, and delivery
-          estimates below are illustrative examples. When a real product search API is added later,
-          this exact interface will render its results.
+          estimates below are illustrative examples. The search above is live; this comparison is
+          fixed demo data.
         </Alert>
       </div>
 
