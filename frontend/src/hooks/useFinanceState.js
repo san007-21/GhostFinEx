@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/useAuth.js'
 import { useLocalStorageState } from './useLocalStorageState'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { reconcileV3DemoState } from '../data/mockData'
 import {
   DEMO_ACCOUNTS,
   DEMO_ADVISOR_TIPS,
@@ -17,12 +18,12 @@ import {
   DEMO_SUBSCRIPTIONS,
   EXPENSE_CATEGORIES,
 } from '../data/mockData'
-import { deriveOverview, monthlyNet, roundMoney, savingsOverview, upcomingRenewals } from '../lib/finance'
+import { deriveOverview, goalSavedAmount, goalsWithProgress, monthlyNet, roundMoney, savingsOverview, upcomingRenewals } from '../lib/finance'
 import * as remote from '../lib/supabaseFinance'
 
 // v3: demo seed rebalanced so account sums equal the derived available
 // balance (Phase 10 unification). Bumping the key re-seeds demo data cleanly.
-const STORAGE_VERSION = 'v3'
+const STORAGE_VERSION = 'v4'
 
 /**
  * Account balances are the single source of truth for money currently held
@@ -32,6 +33,46 @@ const STORAGE_VERSION = 'v3'
  */
 function sumAccountBalances(accounts) {
   return roundMoney(accounts.reduce((sum, a) => sum + (Number(a.balance) || 0), 0))
+}
+
+/**
+ * P1-B storage migration: v3 demo state carried an independent goal.saved
+ * that the contribution ledger could not reconstruct. Bumping the storage
+ * version alone would silently WIPE returning users' demo edits, so instead
+ * v3 payloads are translated once into v4: each goal's excess saved amount
+ * becomes a dated 'Carried over' contribution, making the ledger coherent.
+ */
+function loadV4State(key, seed) {
+  const storageKey = `ghostfinex.${key}`
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (raw !== null) return JSON.parse(raw) // already v4
+  } catch {
+    return seed
+  }
+  // No v4 value: look for the v3 payload and migrate it (once).
+  try {
+    const legacy = window.localStorage.getItem(`ghostfinex.v3.${key.split('.').slice(1).join('.')}`)
+    if (legacy !== null) {
+      const migrated = key.endsWith('.savingsContributions')
+        ? (reconcileV3DemoState({ goals: readV3('goals'), savingsContributions: JSON.parse(legacy) })?.savingsContributions ?? JSON.parse(legacy))
+        : JSON.parse(legacy)
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(migrated))
+      } catch { /* private mode: migrate in memory only */ }
+      return migrated
+    }
+  } catch { /* fall through to seed */ }
+  return seed
+}
+
+function readV3(key) {
+  try {
+    const raw = window.localStorage.getItem(`ghostfinex.v3.${key}`)
+    return raw === null ? [] : JSON.parse(raw)
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -59,11 +100,16 @@ export function useFinanceState() {
   /* ============================ LOCAL (demo) ============================ */
   const [profile, setProfile] = useLocalStorageState(`${STORAGE_VERSION}.profile`, DEMO_PROFILE)
   const [expenses, setExpenses] = useLocalStorageState(`${STORAGE_VERSION}.expenses`, DEMO_EXPENSES)
-  const [goals, setGoals] = useLocalStorageState(`${STORAGE_VERSION}.goals`, DEMO_GOALS)
+  // P1-B: goals/contributions migrate from v3 rather than re-seeding, so a
+  // returning demo user keeps their story with a now-coherent ledger.
+  const [goals, setGoals] = useLocalStorageState(`${STORAGE_VERSION}.goals`, loadV4State('v4.goals', DEMO_GOALS))
   const [subscriptions, setSubscriptions] = useLocalStorageState(`${STORAGE_VERSION}.subscriptions`, DEMO_SUBSCRIPTIONS)
   const [plannedExpenses, setPlannedExpenses] = useLocalStorageState(`${STORAGE_VERSION}.plannedExpenses`, DEMO_PLANNED_EXPENSES)
   const [accounts, setAccounts] = useLocalStorageState(`${STORAGE_VERSION}.accounts`, DEMO_ACCOUNTS)
-  const [savingsContributions, setSavingsContributions] = useLocalStorageState(`${STORAGE_VERSION}.savingsContributions`, DEMO_SAVINGS_CONTRIBUTIONS)
+  const [savingsContributions, setSavingsContributions] = useLocalStorageState(
+    `${STORAGE_VERSION}.savingsContributions`,
+    loadV4State('v4.savingsContributions', DEMO_SAVINGS_CONTRIBUTIONS),
+  )
   const [activityLog, setActivityLog] = useLocalStorageState(`${STORAGE_VERSION}.activity`, [])
 
   /* ============================ REMOTE state ============================ */
@@ -196,16 +242,12 @@ export function useFinanceState() {
   const categories = EXPENSE_CATEGORIES
 
   /* ============================ ACTIVE state ============================ */
-  // Raw profile per mode; the final activeProfile is assembled right after
-  // the account selectors below, because its balance is derived from them.
+  // Raw profile per mode; the final activeProfile is assembled below because
+  // its balance is derived from the account selectors.
   const activeProfileBase = isRemote ? remoteData?.profile ?? emptyRemoteState().profile : profile
   const activeExpenses = useMemo(
     () => (isRemote ? remoteData?.expenses ?? [] : expenses),
     [isRemote, remoteData, expenses],
-  )
-  const activeGoals = useMemo(
-    () => (isRemote ? remoteData?.goals ?? [] : goals),
-    [isRemote, remoteData, goals],
   )
   const activeSubscriptions = useMemo(
     () => (isRemote ? remoteData?.subscriptions ?? [] : subscriptions),
@@ -219,15 +261,6 @@ export function useFinanceState() {
     () => (isRemote ? remoteData?.accounts ?? [] : accounts),
     [isRemote, remoteData, accounts],
   )
-  // Balance is derived from account sums in BOTH modes (Phase 10) — there is
-  // no independent profile-level balance truth anywhere in the app.
-  const activeProfile = useMemo(
-    () => ({
-      ...activeProfileBase,
-      availableBalance: sumAccountBalances(activeAccounts),
-    }),
-    [activeProfileBase, activeAccounts],
-  )
   const activeContributions = useMemo(
     () => (isRemote ? remoteData?.savingsContributions ?? [] : savingsContributions),
     [isRemote, remoteData, savingsContributions],
@@ -236,9 +269,21 @@ export function useFinanceState() {
     () => (isRemote ? remoteData?.activityLog ?? [] : activityLog),
     [isRemote, remoteData, activityLog],
   )
-
-  /* ------------------------------- derived ------------------------------- */
-  // Identical deterministic math in both modes (Phase 11).
+  // Money held is derived from account sums in BOTH modes (Phase 10) — there
+  // is no independent profile-level balance truth anywhere in the app.
+  const activeProfile = useMemo(
+    () => ({
+      ...activeProfileBase,
+      availableBalance: sumAccountBalances(activeAccounts),
+    }),
+    [activeProfileBase, activeAccounts],
+  )
+  // P1-B: goal progress is ALWAYS the sum of contributions — the same rule in
+  // demo and authenticated mode. A goal row carries no authoritative `saved`.
+  const activeGoals = useMemo(
+    () => goalsWithProgress(isRemote ? remoteData?.goals ?? [] : goals, activeContributions),
+    [isRemote, remoteData, goals, activeContributions],
+  )
   const overview = useMemo(
     () => deriveOverview({ profile: activeProfile, expenses: activeExpenses }),
     [activeProfile, activeExpenses],
@@ -352,19 +397,36 @@ export function useFinanceState() {
 
   const addGoal = useCallback(
     (goal) => {
+      // P1-B: an initial "already saved" amount becomes a dated contribution —
+      // goal progress is never stored independently of the ledger.
+      const { saved: initialSaved, ...goalFields } = goal
+      const safeInitial = roundMoney(Math.max(0, Number(initialSaved) || 0))
       if (isRemote) {
-        const optimistic = (s) => ({ ...s, goals: [...s.goals, { ...goal, id: `temp-${Date.now()}`, saved: 0 }] })
+        const optimistic = (s) => ({ ...s, goals: [...s.goals, { ...goalFields, id: `temp-${Date.now()}` }] })
         updateRemote(optimistic)
-        mutateRemote('saving', () => remote.insertGoal(remoteUser.id, goal), optimistic).then((data) => {
-          if (data && data.id) updateRemote((s) => ({ ...s, goals: s.goals.map((g) => (g.id.startsWith('temp-') && g.name === goal.name ? data : g)) }))
-          if (data) logRemoteActivity('goal', `Goal created — ${goal.name}`, data.id)
+        mutateRemote('saving', () => remote.insertGoal(remoteUser.id, goalFields), optimistic).then((data) => {
+          if (data && data.id) {
+            updateRemote((s) => ({ ...s, goals: s.goals.map((g) => (g.id.startsWith('temp-') && g.name === goalFields.name ? data : g)) }))
+            if (safeInitial > 0) {
+              const today = new Date().toISOString().slice(0, 10)
+              mutateRemote('saving', () => remote.insertContribution(remoteUser.id, { amount: safeInitial, date: today, goalId: data.id, label: 'Starting amount' }), null)
+            }
+            logRemoteActivity('goal', `Goal created — ${goalFields.name}`, data.id)
+          }
         })
         return
       }
-      setGoals((prev) => [...prev, { id: `goal-user-${Date.now()}`, saved: 0, ...goal }])
-      logActivity('goal', `Goal created — ${goal.name}`, `target ${formatDetail(goal.target)}`, 'accent')
+      const goalId = `goal-user-${Date.now()}`
+      setGoals((prev) => [...prev, { id: goalId, ...goalFields }])
+      if (safeInitial > 0) {
+        setSavingsContributions((prev) => [
+          { id: `sav-user-${Date.now()}`, amount: safeInitial, date: new Date().toISOString().slice(0, 10), destination: `goal-${goalId}`, label: 'Starting amount' },
+          ...prev,
+        ])
+      }
+      logActivity('goal', `Goal created — ${goalFields.name}`, `target ${formatDetail(goalFields.target)}`, 'accent')
     },
-    [isRemote, remoteUser, updateRemote, mutateRemote, logRemoteActivity, setGoals, logActivity],
+    [isRemote, remoteUser, updateRemote, mutateRemote, logRemoteActivity, setGoals, setSavingsContributions, logActivity],
   )
   const updateGoal = useCallback(
     (goalId, patch) => {
@@ -375,8 +437,9 @@ export function useFinanceState() {
         updateRemote((s) => ({ ...s, goals: s.goals.map((g) => (g.id === goalId ? next : g)) }))
         // "Saved so far" edits become explicit contributions dated today so
         // goal progress stays derived from the contributions ledger.
-        if (patch.saved !== undefined && patch.saved !== current.saved) {
-          const delta = roundMoney(patch.saved - current.saved)
+        if (patch.saved !== undefined) {
+          const currentSaved = goalSavedAmount(goalId, remoteData?.savingsContributions ?? [])
+          const delta = roundMoney((Number(patch.saved) || 0) - currentSaved)
           if (delta > 0) {
             const today = new Date().toISOString().slice(0, 10)
             mutateRemote('saving', () => remote.insertContribution(remoteUser.id, { amount: delta, date: today, goalId, label: 'Adjustment' }), null).then(() => {
@@ -392,34 +455,50 @@ export function useFinanceState() {
         })
         return
       }
-      setGoals((prev) => prev.map((g) => (g.id === goalId ? { ...g, ...patch } : g)))
+      // P1-B: `saved` is derived from contributions — a positive edit becomes
+      // an adjustment contribution; a decrease is ignored (remove a
+      // contribution from the Savings view instead).
+      const { saved: savedPatch, ...rest } = patch
+      setGoals((prev) => prev.map((g) => (g.id === goalId ? { ...g, ...rest } : g)))
+      if (savedPatch !== undefined) {
+        const currentSaved = goalSavedAmount(goalId, savingsContributions)
+        const delta = roundMoney((Number(savedPatch) || 0) - currentSaved)
+        if (delta > 0) {
+          const today = new Date().toISOString().slice(0, 10)
+          setSavingsContributions((prev) => [
+            { id: `sav-user-${Date.now()}`, amount: delta, date: today, destination: `goal-${goalId}`, label: 'Adjustment' },
+            ...prev,
+          ])
+        }
+      }
     },
-    [isRemote, remoteUser, remoteData, updateRemote, mutateRemote, logRemoteActivity, setGoals, setRemoteStatus],
+    [isRemote, remoteUser, remoteData, updateRemote, mutateRemote, logRemoteActivity, setGoals, setSavingsContributions, setRemoteStatus, savingsContributions],
   )
   const addToGoal = useCallback(
     (goalId, amount) => {
       const safe = roundMoney(Math.max(0, amount))
       if (safe <= 0) return
+      // P1-B: a deposit IS a contribution — progress follows the ledger.
+      const today = new Date().toISOString().slice(0, 10)
       if (isRemote) {
-        const today = new Date().toISOString().slice(0, 10)
         const goal = remoteData?.goals.find((g) => g.id === goalId)
         updateRemote((s) => ({
           ...s,
           savingsContributions: [{ id: `temp-${Date.now()}`, amount: safe, date: today, goalId, accountId: null, label: 'Deposit' }, ...s.savingsContributions],
-          goals: s.goals.map((g) => (g.id === goalId ? { ...g, saved: roundMoney(g.saved + safe) } : g)),
         }))
         mutateRemote('saving', () => remote.insertContribution(remoteUser.id, { amount: safe, date: today, goalId, label: 'Deposit' }), null).then((data) => {
           if (data) logRemoteActivity('savings', `Deposit to ${goal?.name ?? 'goal'}`, data.id)
         })
         return
       }
-      setGoals((prev) => {
-        const target = prev.find((g) => g.id === goalId)
-        if (target) logActivity('goal', `Deposit to ${target.name}`, `+${formatDetail(amount)}`, 'accent')
-        return prev.map((g) => (g.id === goalId ? { ...g, saved: roundMoney(g.saved + amount) } : g))
-      })
+      const target = goals.find((g) => g.id === goalId)
+      if (target) logActivity('goal', `Deposit to ${target.name}`, `+${formatDetail(safe)}`, 'accent')
+      setSavingsContributions((prev) => [
+        { id: `sav-user-${Date.now()}`, amount: safe, date: today, destination: `goal-${goalId}`, label: 'Deposit' },
+        ...prev,
+      ])
     },
-    [isRemote, remoteUser, remoteData, updateRemote, mutateRemote, logRemoteActivity, setGoals, logActivity],
+    [isRemote, remoteUser, remoteData, updateRemote, mutateRemote, logRemoteActivity, goals, setSavingsContributions, logActivity],
   )
   const removeGoal = useCallback(
     (goalId) => {
@@ -553,7 +632,6 @@ export function useFinanceState() {
         updateRemote((s) => ({
           ...s,
           savingsContributions: [{ id: `temp-${Date.now()}`, amount: safeAmount, date, goalId, accountId: null, label: label?.trim() || 'Contribution' }, ...s.savingsContributions],
-          goals: goalId ? s.goals.map((g) => (g.id === goalId ? { ...g, saved: roundMoney(g.saved + safeAmount) } : g)) : s.goals,
         }))
         mutateRemote('saving', () => remote.insertContribution(remoteUser.id, { amount: safeAmount, date, goalId, label }), null).then((data) => {
           if (data) logRemoteActivity('savings', `Savings contribution — ${label?.trim() || 'Contribution'}`, data.id)
@@ -562,13 +640,9 @@ export function useFinanceState() {
       }
       const entry = { id: `sav-user-${Date.now()}`, amount: safeAmount, date, destination: destination ?? '', label: label?.trim() || 'Contribution' }
       setSavingsContributions((prev) => [entry, ...prev])
-      if (entry.destination.startsWith('goal-')) {
-        const localGoalId = entry.destination.slice('goal-'.length)
-        setGoals((prev) => prev.map((g) => (g.id === localGoalId ? { ...g, saved: roundMoney(g.saved + safeAmount) } : g)))
-      }
       logActivity('savings', `Savings contribution — ${entry.label}`, `+${formatDetail(safeAmount)}`, 'accent')
     },
-    [isRemote, remoteUser, updateRemote, mutateRemote, logRemoteActivity, setSavingsContributions, setGoals, logActivity],
+    [isRemote, remoteUser, updateRemote, mutateRemote, logRemoteActivity, setSavingsContributions, logActivity],
   )
 
   const addPlannedExpense = useCallback(

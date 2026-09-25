@@ -108,6 +108,26 @@ export function deriveOverview({ profile, expenses }, reference = new Date()) {
 /* ------------------------------ savings goals ----------------------------- */
 
 /**
+ * CANONICAL GOAL PROGRESS (P1-B): a goal's saved amount is ALWAYS the sum of
+ * the contributions recorded against it — never an independently stored
+ * value. Accounts hold money; contributions record the act of saving toward
+ * a goal; goal.saved is derived. Every view and hook must get its goal
+ * progress through these helpers.
+ */
+export function goalSavedAmount(goalId, contributions) {
+  return roundMoney(
+    contributions
+      .filter((c) => (c.goalId ?? (typeof c.destination === 'string' && c.destination.startsWith('goal-') ? c.destination.slice(5) : null)) === goalId)
+      .reduce((sum, c) => sum + (Number(c.amount) || 0), 0),
+  )
+}
+
+/** Attach contribution-derived progress to a list of goals. */
+export function goalsWithProgress(goals, contributions) {
+  return goals.map((goal) => ({ ...goal, saved: goalSavedAmount(goal.id, contributions) }))
+}
+
+/**
  * Weekly amount still needed to hit a goal by its deadline.
  */
 export function weeklyAmountNeeded(target, saved, weeksLeft) {

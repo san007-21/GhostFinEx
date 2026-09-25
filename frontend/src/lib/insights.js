@@ -8,6 +8,7 @@
  */
 import { formatCurrency } from './format'
 import {
+  expensesByCategory,
   expensesInMonth,
   roundMoney,
   subscriptionBurden,
@@ -71,7 +72,7 @@ export function buildInsights({ profile, expenses, goals, subscriptions, overvie
 
   /* Biggest category — this month only, to match every monthly figure */
   const monthExpenses = expensesInMonth(expenses)
-  const byCategory = expensesByCategorySorted(monthExpenses)
+  const byCategory = expensesByCategory(monthExpenses)
   if (byCategory.length > 0 && overview.monthSpent > 0) {
     push(
       'info',
@@ -123,14 +124,4 @@ export function buildInsights({ profile, expenses, goals, subscriptions, overvie
   }
 
   return insights
-}
-
-function expensesByCategorySorted(expenses) {
-  const map = new Map()
-  for (const expense of expenses) {
-    map.set(expense.category, roundMoney((map.get(expense.category) ?? 0) + expense.amount))
-  }
-  return [...map.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([category, total]) => ({ category, total }))
 }

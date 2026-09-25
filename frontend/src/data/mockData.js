@@ -130,9 +130,26 @@ export const DEMO_ACCOUNTS = [
  * income minus expenses — leftover money is only potential savings until the
  * user records a real transfer.
  */
+/**
+ * Demo contribution ledger (P1-B coherence): every goal's displayed saved
+ * amount is EXACTLY the sum of its contributions here — nothing else.
+ *   laptop:    800+700+400+500      = 2,400 of 9,000
+ *   emergency: 650+400+400 (Sep)    = 1,450 of 3,000  (= Emergency savings account)
+ *   trip:      250 (Sep)            = 250 of 1,600
+ * Pre-September entries are the historical story; the two September entries
+ * (sav-001, sav-002) are the ones highlighted as "this month" by the savings
+ * metrics. Goal rows keep a matching `saved` for documentation only — the
+ * calculation layer always derives it from this ledger.
+ */
 export const DEMO_SAVINGS_CONTRIBUTIONS = [
   { id: 'sav-001', amount: 400, date: '2026-09-05', destination: 'goal-goal-emergency', label: 'Monthly top-up' },
   { id: 'sav-002', amount: 250, date: '2026-09-14', destination: 'goal-goal-trip', label: 'Bus ticket fund' },
+  { id: 'sav-100', amount: 800, date: '2026-07-03', destination: 'goal-goal-laptop', label: 'Part-time pay — initial' },
+  { id: 'sav-101', amount: 700, date: '2026-07-31', destination: 'goal-goal-laptop', label: 'Part-time pay' },
+  { id: 'sav-102', amount: 400, date: '2026-08-08', destination: 'goal-goal-laptop', label: 'Sold old calculator' },
+  { id: 'sav-103', amount: 500, date: '2026-08-29', destination: 'goal-goal-laptop', label: 'Bursary top-up' },
+  { id: 'sav-104', amount: 650, date: '2026-07-10', destination: 'goal-goal-emergency', label: 'Opened the buffer' },
+  { id: 'sav-105', amount: 400, date: '2026-08-12', destination: 'goal-goal-emergency', label: 'Monthly top-up' },
 ]
 
 /* ----------------------------- subscriptions ----------------------------- */
@@ -388,6 +405,52 @@ export const DEMO_ADVISOR_TIPS = [
  * showing the interaction pattern. Not a live AI, not real conversation
  * history. Ghost answers are rule-based and computed from local state at runtime.
  */
+/**
+ * v3→v4 demo migration (P1-B): browsers holding v3 state have goals with a
+ * stale independent `saved` value but only the two September contributions.
+ * Rather than silently resetting them, translate each v3 goal's saved amount
+ * into equivalent historical contributions so the ledger reconstructs the
+ * same story: one dated pre-September 'Carried over from earlier setup'
+ * contribution per goal, minus the September entries already present.
+ * Pure and self-contained (mockData stays import-free); null = no change.
+ */
+export function reconcileV3DemoState(state) {
+  const round = (v) => Math.round((v + Number.EPSILON) * 100) / 100
+  if (!state || typeof state !== 'object') return null
+  const goals = Array.isArray(state.goals) ? state.goals : []
+  const contributions = Array.isArray(state.savingsContributions) ? state.savingsContributions : []
+  if (goals.length === 0) return null
+
+  const totalByGoal = new Map()
+  for (const c of contributions) {
+    if (typeof c.destination === 'string' && c.destination.startsWith('goal-')) {
+      totalByGoal.set(c.destination.slice(5), (totalByGoal.get(c.destination.slice(5)) ?? 0) + (Number(c.amount) || 0))
+    }
+  }
+
+  let changed = false
+  const extraContributions = []
+  for (const goal of goals) {
+    if (goal.saved === undefined) continue
+    const carriedOver = round((Number(goal.saved) || 0) - (totalByGoal.get(goal.id) ?? 0))
+    if (carriedOver > 0) {
+      extraContributions.push({
+        id: `migr-${goal.id}-${String(goal.saved).replace('.', '-')}`,
+        amount: carriedOver,
+        date: '2026-05-01',
+        destination: `goal-${goal.id}`,
+        label: 'Carried over from earlier setup',
+      })
+      changed = true
+    }
+  }
+  if (!changed) return null
+  return {
+    ...state,
+    savingsContributions: [...extraContributions, ...contributions],
+  }
+}
+
 export const DEMO_GHOST_CONVERSATION = [
   { id: 'demo-1', role: 'user', text: 'How am I doing this month?' },
   { id: 'demo-2', role: 'ghost', text: 'This is an example exchange so you can see how I work. Ask me anything about your month and I will answer from your own numbers — no AI model involved.' },
