@@ -173,7 +173,13 @@ export function AuthProvider({ children }) {
           return
         }
         const { error } = await supabase.auth.signOut()
-        if (error) throw authError(error)
+        if (error) {
+          // Local state is cleared even if the server call fails: an unhandled
+          // rejection here must never leave the UI in a broken half-signed-in
+          // limbo. The server session token will expire on its own.
+          setUser(DEMO_USER)
+          throw authError(error)
+        }
         setUser(DEMO_USER)
       },
 

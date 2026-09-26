@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Component, Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import './App.css'
 import { useFinanceState } from './hooks/useFinanceState'
 import { AuthProvider } from './auth/authContext.jsx'
 import { useAuth } from './auth/useAuth.js'
-import { Disclaimer } from './components/ui/Primitives.jsx'
+import { Disclaimer, SkeletonCard } from './components/ui/Primitives.jsx'
 import Sidebar from './components/nav/Sidebar.jsx'
 import TopBar from './components/nav/TopBar.jsx'
 import MobileMenu from './components/nav/MobileMenu.jsx'
@@ -13,14 +13,83 @@ import LandingView from './views/LandingView.jsx'
 import { NAV_ITEMS } from './components/nav/navItems.js'
 
 /**
- * Resolve a known view id from the URL hash, or null when at the bare root.
- * `landing` is the public marketing page; NAV_ITEM ids are the app views.
+ * Route-level code splitting: each view ships as its own chunk and loads on
+ * first navigation, cutting the initial bundle roughly in half (React and the
+ * Supabase client stay in the entry — the app cannot boot without them).
+ * All views share the same props contract, so laziness is invisible to them.
  */
+const LazyViews = Object.fromEntries(
+  NAV_ITEMS.map((item) => [item.id, lazy(item.load)]),
+)
+
+/** Hash → view id resolution (unchanged behavior). */
 function knownViewFromHash() {
   const hash = window.location.hash.replace('#', '')
   if (hash === 'landing') return 'landing'
   if (NAV_ITEMS.some((item) => item.id === hash)) return hash
   return null
+}
+
+/**
+ * Render-crash containment: a broken view must never white-screen the whole
+ * app. The boundary shows an actionable recovery panel and keeps the shell
+ * (sidebar, top bar, Ghost) alive, so the failure is always recoverable.
+ */
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+
+  componentDidCatch(error, info) {
+    // Developer-facing detail only; never shown to the user.
+    console.error('[ghostfinex] view crashed:', error, info?.componentStack)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="mx-auto max-w-lg py-16 text-center">
+          <h2 className="text-lg font-semibold text-[var(--gfx-text)]">This view hit a snag</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-[var(--gfx-muted)]">
+            Something went wrong while rendering this page. Your data is safe — nothing was
+            changed. Try reopening the view, or head back to the dashboard.
+          </p>
+          <div className="mt-5 flex justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => this.setState({ error: null })}
+              className="rounded-lg border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3 py-1.5 text-sm font-medium text-[var(--gfx-text)] hover:border-[var(--gfx-border-strong)]"
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              onClick={this.props.onNavigateDashboard}
+              className="rounded-lg bg-[var(--gfx-accent-strong)] px-3 py-1.5 text-sm font-medium text-[var(--gfx-accent-ink)] hover:bg-[var(--gfx-accent)]"
+            >
+              Back to dashboard
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+/** Suspense placeholder matching the app's skeleton language. */
+function ViewFallback() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-live="polite">
+      <SkeletonCard lines={2} />
+      <SkeletonCard />
+    </div>
+  )
 }
 
 export default function App() {
@@ -69,7 +138,7 @@ function GhostFinEx() {
   }
 
   const active = NAV_ITEMS.find((item) => item.id === activeId) ?? NAV_ITEMS[0]
-  const ActiveView = active.View
+  const ActiveView = LazyViews[active.id]
 
   return (
     <div className="flex min-h-screen">
@@ -112,7 +181,11 @@ function GhostFinEx() {
         )}
 
         <main id="main-content" key={activeId} className="gfx-enter mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <ActiveView finance={finance} onNavigate={navigate} />
+          <ErrorBoundary key={activeId} onNavigateDashboard={() => navigate('dashboard')}>
+            <Suspense fallback={<ViewFallback />}>
+              <ActiveView finance={finance} onNavigate={navigate} />
+            </Suspense>
+          </ErrorBoundary>
         </main>
 
         <footer className="border-t border-[var(--gfx-border)] px-4 pb-24 pt-4 sm:px-6 lg:pb-4">

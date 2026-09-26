@@ -1,0 +1,4 @@
+project_id = "unwelbnkfxulvqhjovjh"
+
+[functions.rag-ingest]
+verify_jwt = false

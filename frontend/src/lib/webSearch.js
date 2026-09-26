@@ -19,6 +19,9 @@ import { supabase } from './supabase'
 const MAX_QUERY_LENGTH = 300
 const CACHE_TTL_MS = 10 * 60 * 1000
 const CACHE_MAX = 30
+/** Hard ceiling on one search round-trip so a hung Edge Function can never
+ * leave a spinner stuck (Ghost, Smart Shopping, and Books all await this). */
+const SEARCH_TIMEOUT_MS = 20_000
 
 const cache = new Map()
 
@@ -37,6 +40,27 @@ function cacheSet(key, value) {
     cache.delete(cache.keys().next().value)
   }
   cache.set(key, { at: Date.now(), value })
+}
+
+/**
+ * Invoke an Edge Function with a hard timeout. `timedOut` is set by the flag
+ * object so the caller can distinguish a timeout from a user cancellation.
+ * `options` is the full supabase.functions.invoke options object.
+ */
+async function invokeWithTimeout(fnName, options, timeoutMs, timedOut) {
+  if (typeof AbortController !== 'function') {
+    return supabase.functions.invoke(fnName, options)
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => {
+    timedOut.value = true
+    controller.abort()
+  }, timeoutMs)
+  try {
+    return await supabase.functions.invoke(fnName, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function message(error, fallback) {
@@ -84,10 +108,14 @@ export async function searchWeb(query, { signal } = {}) {
   const cached = cacheGet(key)
   if (cached) return { data: { ...cached, cached: true }, error: null }
 
+  // Declared before try/catch so the catch block can read the flag.
+  const timedOutFlag = { value: false }
   try {
-    const { data, error, status } = await supabase.functions.invoke(
+    const { data, error, status } = await invokeWithTimeout(
       'web-search',
       { body: { query: text }, ...(signal ? { signal } : {}) },
+      SEARCH_TIMEOUT_MS,
+      timedOutFlag,
     )
     if (error) {
       return { data: null, error: friendlyEdgeError(status, message(error, null), error?.kind ?? data?.kind) }
@@ -114,6 +142,9 @@ export async function searchWeb(query, { signal } = {}) {
     if (results.length > 0) cacheSet(key, payload)
     return { data: payload, error: null }
   } catch (err) {
+    if (timedOutFlag.value) {
+      return { data: null, error: `The search took too long (over ${SEARCH_TIMEOUT_MS / 1000}s) — please try again.` }
+    }
     if (err?.name === 'AbortError') return { data: null, error: 'Search cancelled.' }
     return { data: null, error: message(err, 'Could not reach web search — check your connection and try again.') }
   }

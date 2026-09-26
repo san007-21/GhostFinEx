@@ -14,6 +14,10 @@
 
 import { supabase } from './supabase'
 
+/** Hard ceiling on one Ghost round-trip so a hung Edge Function can never
+ * leave the assistant busy forever. */
+const ASK_TIMEOUT_MS = 30_000
+
 function message(error, fallback) {
   return error instanceof Error ? error.message : (error?.message ?? fallback)
 }
@@ -44,10 +48,20 @@ export async function askGhost(question, { signal } = {}) {
   if (!supabase) return { data: null, error: 'Ghost AI needs a Supabase connection, which this build does not have.' }
 
   try {
-    const { data, error, status } = await supabase.functions.invoke(
-      'ghost-ai',
-      { body: { question: text }, ...(signal ? { signal } : {}) },
-    )
+    // Hard timeout: an Edge Function that never responds must not leave the
+    // assistant stuck on "busy" for the rest of the session.
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    const timer = controller ? setTimeout(() => controller.abort(), ASK_TIMEOUT_MS) : null
+    let response
+    try {
+      response = await supabase.functions.invoke(
+        'ghost-ai',
+        { body: { question: text }, ...(signal ? { signal } : {}), ...(controller ? { signal: controller.signal } : {}) },
+      )
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+    const { data, error, status } = response
     if (error) return { data: null, error: friendlyEdgeError(status, message(error, null)) }
     const answer = typeof data?.answer === 'string' ? data.answer.trim() : ''
     if (!answer) return { data: null, error: 'Ghost returned an empty answer — try rephrasing your question.' }
@@ -62,7 +76,10 @@ export async function askGhost(question, { signal } = {}) {
       error: null,
     }
   } catch (err) {
-    if (err?.name === 'AbortError') return { data: null, error: 'Question cancelled.' }
+    if (err?.name === 'AbortError') {
+      // Distinguish our timeout from a caller's cancellation by timing.
+      return { data: null, error: `Ghost took too long to answer (over ${ASK_TIMEOUT_MS / 1000}s) — please try again.` }
+    }
     return { data: null, error: message(err, 'Could not reach Ghost AI — check your connection and try again.') }
   }
 }

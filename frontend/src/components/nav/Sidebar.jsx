@@ -7,7 +7,7 @@ import { NAV_ITEMS } from './navItems.js'
 export default function Sidebar({ activeId, onNavigate }) {
   const groups = ['Money', 'Decide', 'Plan']
   return (
-    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-[var(--gfx-border)] bg-[var(--gfx-surface)] lg:flex">
+    <aside className="glass-soft sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-[var(--gfx-border)] lg:flex">
       <div className="flex items-center gap-3 px-5 py-5">
         <Logo />
         <div>

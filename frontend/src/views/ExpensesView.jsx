@@ -13,13 +13,15 @@ import {
 import { CategoryBars } from '../components/charts/Charts.jsx'
 import { formatCurrency, formatDate } from '../lib/format'
 import { expensesByCategory, roundMoney } from '../lib/finance'
-import { IconWallet } from '../components/ui/icons.jsx'
+import { IconGhost, IconWallet } from '../components/ui/icons.jsx'
+import ScanBillModal from '../components/ScanBillModal.jsx'
 
 const EMPTY_FORM = { name: '', amount: 0, category: '', date: '' }
 
 export default function ExpensesView({ finance }) {
   const { expenses, categories, overview, addExpense, removeExpense } = finance
   const [addOpen, setAddOpen] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState('')
   const [filter, setFilter] = useState('all')
@@ -55,7 +57,12 @@ export default function ExpensesView({ finance }) {
         title="Expenses"
         subtitle="Log what you spend. Totals everywhere in the app are calculated from this ledger."
       >
-        <Button onClick={() => { setForm(EMPTY_FORM); setFormError(''); setAddOpen(true) }}>+ Add expense</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => { setScanOpen(true) }}>
+            <IconGhost className="h-4 w-4" /> Ghost Camera
+          </Button>
+          <Button onClick={() => { setForm(EMPTY_FORM); setFormError(''); setAddOpen(true) }}>+ Add expense</Button>
+        </div>
       </PageHeader>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -150,6 +157,23 @@ export default function ExpensesView({ finance }) {
           <button type="submit" className="sr-only">Save</button>
         </form>
       </Modal>
+
+      {/* Mounted only while open: every Scan Bill session starts fresh. */}
+      {scanOpen && (
+        <ScanBillModal
+          open
+          onClose={() => setScanOpen(false)}
+          categories={categories}
+          onConfirm={(expense) => {
+            const { invoice, ...expenseFields } = expense
+            addExpense({
+              ...expenseFields,
+              name: invoice ? `${expenseFields.name} · ${invoice}` : expenseFields.name,
+            })
+            setScanOpen(false)
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={pendingDelete !== null}

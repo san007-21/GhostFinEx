@@ -1,160 +1,423 @@
-/**
- * rag-ingest — GhostFinEx RAG FOUNDATION (isolated from financial CRUD).
- *
- * Responsibility: accept knowledge documents, chunk them deterministically
- * (same algorithm as scripts/seedRagKnowledge.mjs), embed each chunk with the
- * built-in Supabase AI model (gte-small, 384-dim — no external API, no keys),
- * and upsert into the knowledge tables. READ side stays in Postgres via the
- * match_financial_chunks RPC; this function is WRITE-only for knowledge.
- *
- * Security:
- *   - INGESTION IS ADMIN-ONLY. RAG_INGEST_TOKEN (supabase secrets set) is
- *     MANDATORY: if it is not configured the function refuses every write
- *     with 503 and nothing is stored. The Supabase anon/publishable key and
- *     normal authenticated users can never authorize ingestion — the only
- *     accepted credential is exactly the server-side ingest token, compared
- *     in constant time (SHA-256 digests, fixed-length). The token is never
- *     logged and never echoed in any response.
- *   - Uses the Edge Function service role via createClient — server-side
- *     only, never shipped to the browser. No secrets in VITE_ variables.
- *   - CORS is restricted to the app's own origin pattern.
- *
- * Isolation: touches ONLY financial_documents / financial_document_chunks.
- * It never reads or writes accounts, expenses, goals, subscriptions, or any
- * user-owned financial table.
- */
-// @ts-nocheck — Deno Edge Function; typechecked by `supabase functions` tooling
-import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { chunkText } from './chunking.ts'
-import { generateEmbedding } from '../_shared/embedding.ts'
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { chunkText } from "./chunking.ts";
+import { generateEmbedding } from "../_shared/embedding.ts";
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Content-Type": "application/json",
+};
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: CORS_HEADERS,
+  });
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+
+  let diff = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+
+  return diff === 0;
+}
+
+async function sha256(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+interface KnowledgeDocument {
+  title: string;
+  source?: string;
+  category?: string;
+  content: string;
+}
+
+interface IngestRequest {
+  documents: KnowledgeDocument[];
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: CORS_HEADERS })
+  // ------------------------------------------------------------
+  // CORS
+  // ------------------------------------------------------------
+
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: CORS_HEADERS,
+    });
   }
 
-  // ---- MANDATORY admin gate (fail closed) --------------------------------
-  // The service-role key this function writes with must never be reachable
-  // without the administrative secret. No token configured = no ingestion,
-  // ever. The anon key and ordinary user sessions are not alternatives.
-  const ingestToken = Deno.env.get('RAG_INGEST_TOKEN')
+  // ------------------------------------------------------------
+  // POST only
+  // ------------------------------------------------------------
+
+  if (req.method !== "POST") {
+    return jsonResponse(
+      {
+        error: "Method not allowed",
+      },
+      405,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // RAG ingestion token
+  // ------------------------------------------------------------
+
+  const ingestToken = Deno.env.get("RAG_INGEST_TOKEN");
+
   if (!ingestToken) {
-    return new Response(
-      JSON.stringify({ error: 'Ingestion is not configured (missing administrative token)' }),
-      { status: 503, headers: CORS_HEADERS },
-    )
+    console.error("RAG_INGEST_TOKEN is not configured");
+
+    return jsonResponse(
+      {
+        error: "RAG ingestion is not configured",
+      },
+      503,
+    );
   }
 
-  // Constant-time credential check: SHA-256 both sides (fixed 32-byte output,
-  // also hides the real token's length), then XOR-compare the digests.
-  const auth = req.headers.get('Authorization') ?? ''
-  const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-  const encoder = new TextEncoder()
+  // ------------------------------------------------------------
+  // Authorization
+  // ------------------------------------------------------------
+
+  const authorization = req.headers.get("Authorization") ?? "";
+
+  if (!authorization.startsWith("Bearer ")) {
+    return jsonResponse(
+      {
+        error: "Unauthorized",
+      },
+      401,
+    );
+  }
+
+  const presentedToken = authorization
+    .slice("Bearer ".length)
+    .trim();
+
+  if (!presentedToken) {
+    return jsonResponse(
+      {
+        error: "Unauthorized",
+      },
+      401,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Constant-time token comparison
+  // ------------------------------------------------------------
+
   const [presentedDigest, expectedDigest] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(presented)),
-    crypto.subtle.digest('SHA-256', encoder.encode(ingestToken)),
-  ])
-  const a = new Uint8Array(presentedDigest)
-  const b = new Uint8Array(expectedDigest)
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i]
-  if (diff !== 0) {
-    // Deliberately vague: no hint about which part mismatched, no echo of
-    // anything presented, nothing about the configured token.
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS_HEADERS })
+    sha256(presentedToken),
+    sha256(ingestToken),
+  ]);
+
+  if (!constantTimeEqual(presentedDigest, expectedDigest)) {
+    return jsonResponse(
+      {
+        error: "Unauthorized",
+      },
+      401,
+    );
   }
 
-  let payload
-  try {
-    payload = await req.json()
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: CORS_HEADERS })
+  // ------------------------------------------------------------
+  // Supabase environment
+  // ------------------------------------------------------------
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get(
+    "SUPABASE_SERVICE_ROLE_KEY",
+  );
+
+  if (!supabaseUrl) {
+    console.error("SUPABASE_URL is missing");
+
+    return jsonResponse(
+      {
+        error: "Supabase configuration error",
+      },
+      503,
+    );
   }
 
-  const documents = Array.isArray(payload?.documents) ? payload.documents : null
-  if (!documents || documents.length === 0) {
-    return new Response(JSON.stringify({ error: 'Expected { documents: [...] }' }), { status: 400, headers: CORS_HEADERS })
+  if (!serviceRoleKey) {
+    console.error("SUPABASE_SERVICE_ROLE_KEY is missing");
+
+    return jsonResponse(
+      {
+        error: "Supabase configuration error",
+      },
+      503,
+    );
   }
 
-  // Validate before touching the database.
-  for (const doc of documents) {
-    if (
-      typeof doc?.title !== 'string' || !doc.title.trim() ||
-      typeof doc?.content !== 'string' || !doc.content.trim()
-    ) {
-      return new Response(
-        JSON.stringify({ error: 'Each document needs non-empty title and content' }),
-        { status: 400, headers: CORS_HEADERS },
-      )
-    }
-  }
+  // ------------------------------------------------------------
+  // Server-side Supabase client
+  // ------------------------------------------------------------
 
   const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, // server-side only, never in the browser
-  )
+    supabaseUrl,
+    serviceRoleKey,
+  );
 
-  // gte-small (384-dim, normalized) via the shared embedding service — the
-  // ONLY place embeddings are produced. No external API, no keys.
-  let docsUpserted = 0
-  let chunksUpserted = 0
+  // ------------------------------------------------------------
+  // Parse request
+  // ------------------------------------------------------------
+
+  let payload: IngestRequest;
 
   try {
-    for (const doc of documents) {
-      // 1. Upsert the document by its unique title.
-      const { data: docRow, error: docError } = await supabase
-        .from('financial_documents')
-        .upsert(
-          {
-            title: doc.title.trim(),
-            source: doc.source ?? null,
-            category: doc.category ?? null,
-            content: doc.content,
-          },
-          { onConflict: 'title' },
-        )
-        .select('id')
-        .single()
-      if (docError) throw docError
-      docsUpserted += 1
+    payload = await req.json();
+  } catch (error) {
+    console.error("Invalid JSON request");
 
-      // 2. Chunk deterministically and embed each chunk.
-      const chunks = chunkText(doc.content)
-      for (const [index, chunk] of chunks.entries()) {
-        const embedding = await generateEmbedding(chunk)
-
-        // 3. Upsert the chunk by (document_id, chunk_index) — repeatable.
-        const { error: chunkError } = await supabase
-          .from('financial_document_chunks')
-          .upsert(
-            {
-              document_id: docRow.id,
-              chunk_index: index,
-              content: chunk,
-              embedding,
-            },
-            { onConflict: 'document_id,chunk_index' },
-          )
-        if (chunkError) throw chunkError
-        chunksUpserted += 1
-      }
-    }
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Ingest failed' }),
-      { status: 500, headers: CORS_HEADERS },
-    )
+    return jsonResponse(
+      {
+        error: "Invalid JSON body",
+      },
+      400,
+    );
   }
 
-  return new Response(
-    JSON.stringify({ ok: true, docsUpserted, chunksUpserted }),
-    { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } },
-  )
-})
+  // ------------------------------------------------------------
+  // Validate documents
+  // ------------------------------------------------------------
+
+  if (!payload || !Array.isArray(payload.documents)) {
+    return jsonResponse(
+      {
+        error: "documents must be an array",
+      },
+      400,
+    );
+  }
+
+  if (payload.documents.length === 0) {
+    return jsonResponse(
+      {
+        error: "At least one document is required",
+      },
+      400,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Ingestion
+  // ------------------------------------------------------------
+
+  let docsUpserted = 0;
+  let chunksUpserted = 0;
+
+  try {
+    for (
+      const [docIndex, doc] of payload.documents.entries()
+    ) {
+      // --------------------------------------------------------
+      // Validate document
+      // --------------------------------------------------------
+
+      if (!doc || typeof doc !== "object") {
+        throw new Error(
+          `Document ${docIndex} is invalid`,
+        );
+      }
+
+      if (
+        typeof doc.title !== "string" ||
+        !doc.title.trim()
+      ) {
+        throw new Error(
+          `Document ${docIndex} is missing title`,
+        );
+      }
+
+      if (
+        typeof doc.content !== "string" ||
+        !doc.content.trim()
+      ) {
+        throw new Error(
+          `Document "${doc.title}" is missing content`,
+        );
+      }
+
+      const title = doc.title.trim();
+
+      const source =
+        typeof doc.source === "string"
+          ? doc.source.trim()
+          : null;
+
+      const category =
+        typeof doc.category === "string"
+          ? doc.category.trim()
+          : null;
+
+      const content = doc.content.trim();
+
+      console.log(
+        `Processing document ${docIndex + 1}/${payload.documents.length}: ${title}`,
+      );
+
+      // --------------------------------------------------------
+      // Upsert document
+      // --------------------------------------------------------
+
+      const { data: documentRow, error: documentError } =
+        await supabase
+          .from("financial_documents")
+          .upsert(
+            {
+              title,
+              source,
+              category,
+              content,
+            },
+            {
+              onConflict: "title",
+            },
+          )
+          .select("id")
+          .single();
+
+      if (documentError) {
+        console.error(
+          `Document upsert failed for "${title}"`,
+          documentError,
+        );
+
+        throw new Error(
+          "Knowledge document could not be stored",
+        );
+      }
+
+      if (!documentRow?.id) {
+        throw new Error(
+          "Knowledge document did not return an id",
+        );
+      }
+
+      docsUpserted++;
+
+      const documentId = documentRow.id;
+
+      // --------------------------------------------------------
+      // Chunk document
+      // --------------------------------------------------------
+
+      const chunks = chunkText(content);
+
+      console.log(
+        `"${title}" produced ${chunks.length} chunks`,
+      );
+
+      // --------------------------------------------------------
+      // Embed + store chunks
+      // --------------------------------------------------------
+
+      for (
+        let chunkIndex = 0;
+        chunkIndex < chunks.length;
+        chunkIndex++
+      ) {
+        const chunk = chunks[chunkIndex];
+
+        if (!chunk.trim()) {
+          continue;
+        }
+
+        console.log(
+          `Embedding chunk ${chunkIndex + 1}/${chunks.length} for "${title}"`,
+        );
+
+        const embedding = await generateEmbedding(chunk);
+
+        if (!Array.isArray(embedding)) {
+          throw new Error(
+            "Embedding generation failed",
+          );
+        }
+
+        if (embedding.length !== 384) {
+          throw new Error(
+            "Embedding dimension mismatch",
+          );
+        }
+
+        const { error: chunkError } =
+          await supabase
+            .from("financial_document_chunks")
+            .upsert(
+              {
+                document_id: documentId,
+                chunk_index: chunkIndex,
+                content: chunk,
+                embedding,
+              },
+              {
+                onConflict:
+                  "document_id,chunk_index",
+              },
+            );
+
+        if (chunkError) {
+          console.error(
+            `Chunk upsert failed for "${title}" chunk ${chunkIndex}`,
+            chunkError,
+          );
+
+          throw new Error(
+            "Knowledge chunk could not be stored",
+          );
+        }
+
+        chunksUpserted++;
+      }
+    }
+
+    // ----------------------------------------------------------
+    // Success
+    // ----------------------------------------------------------
+
+    console.log(
+      `RAG ingestion completed: ${docsUpserted} documents, ${chunksUpserted} chunks`,
+    );
+
+    return jsonResponse({
+      ok: true,
+      docsUpserted,
+      chunksUpserted,
+    });
+  } catch (error) {
+    // ----------------------------------------------------------
+    // Production-safe error response
+    // ----------------------------------------------------------
+    // Detailed internal error is logged server-side only.
+    // The client receives a generic message.
+    // ----------------------------------------------------------
+
+    console.error("RAG ingestion failed:", error);
+
+    return jsonResponse(
+      {
+        error: "Ingest failed",
+      },
+      500,
+    );
+  }
+});

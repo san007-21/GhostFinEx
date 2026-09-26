@@ -3,6 +3,7 @@ import { useAuth } from '../auth/useAuth.js'
 import { useLocalStorageState } from './useLocalStorageState'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { reconcileV3DemoState } from '../data/mockData'
+import { toIsoDate } from '../lib/calendar'
 import {
   DEMO_ACCOUNTS,
   DEMO_ADVISOR_TIPS,
@@ -40,7 +41,7 @@ function sumAccountBalances(accounts) {
  * that the contribution ledger could not reconstruct. Bumping the storage
  * version alone would silently WIPE returning users' demo edits, so instead
  * v3 payloads are translated once into v4: each goal's excess saved amount
- * becomes a dated 'Carried over' contribution, making the ledger coherent.
+ * becomes a dated 'Carried over' contribution, making the ledger P1-B-coherent.
  */
 function loadV4State(key, seed) {
   const storageKey = `ghostfinex.${key}`
@@ -305,7 +306,7 @@ export function useFinanceState() {
         [
           {
             id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            date: new Date().toISOString().slice(0, 10),
+            date: toIsoDate(new Date()),
             kind,
             label,
             detail,
@@ -402,13 +403,19 @@ export function useFinanceState() {
       const { saved: initialSaved, ...goalFields } = goal
       const safeInitial = roundMoney(Math.max(0, Number(initialSaved) || 0))
       if (isRemote) {
-        const optimistic = (s) => ({ ...s, goals: [...s.goals, { ...goalFields, id: `temp-${Date.now()}` }] })
+        // The temp id is captured in a closure variable so the optimistic
+        // updater stays pure — StrictMode double-invokes updaters in dev, and
+        // reconciliation can then target the row by exact id.
+        const tempId = `temp-${Date.now()}`
+        const optimistic = (s) => ({ ...s, goals: [...s.goals, { ...goalFields, id: tempId }] })
         updateRemote(optimistic)
         mutateRemote('saving', () => remote.insertGoal(remoteUser.id, goalFields), optimistic).then((data) => {
           if (data && data.id) {
-            updateRemote((s) => ({ ...s, goals: s.goals.map((g) => (g.id.startsWith('temp-') && g.name === goalFields.name ? data : g)) }))
+            // Replace the optimistic row by its exact temp id (stable across
+            // StrictMode's double invocation) rather than by name matching.
+            updateRemote((s) => ({ ...s, goals: s.goals.map((g) => (g.id === tempId ? data : g)) }))
             if (safeInitial > 0) {
-              const today = new Date().toISOString().slice(0, 10)
+              const today = toIsoDate(new Date())
               mutateRemote('saving', () => remote.insertContribution(remoteUser.id, { amount: safeInitial, date: today, goalId: data.id, label: 'Starting amount' }), null)
             }
             logRemoteActivity('goal', `Goal created — ${goalFields.name}`, data.id)
@@ -420,7 +427,7 @@ export function useFinanceState() {
       setGoals((prev) => [...prev, { id: goalId, ...goalFields }])
       if (safeInitial > 0) {
         setSavingsContributions((prev) => [
-          { id: `sav-user-${Date.now()}`, amount: safeInitial, date: new Date().toISOString().slice(0, 10), destination: `goal-${goalId}`, label: 'Starting amount' },
+          { id: `sav-user-${Date.now()}`, amount: safeInitial, date: toIsoDate(new Date()), destination: `goal-${goalId}`, label: 'Starting amount' },
           ...prev,
         ])
       }
@@ -441,7 +448,7 @@ export function useFinanceState() {
           const currentSaved = goalSavedAmount(goalId, remoteData?.savingsContributions ?? [])
           const delta = roundMoney((Number(patch.saved) || 0) - currentSaved)
           if (delta > 0) {
-            const today = new Date().toISOString().slice(0, 10)
+            const today = toIsoDate(new Date())
             mutateRemote('saving', () => remote.insertContribution(remoteUser.id, { amount: delta, date: today, goalId, label: 'Adjustment' }), null).then(() => {
               logRemoteActivity('savings', `Adjustment to ${current.name}`)
             })
@@ -464,7 +471,7 @@ export function useFinanceState() {
         const currentSaved = goalSavedAmount(goalId, savingsContributions)
         const delta = roundMoney((Number(savedPatch) || 0) - currentSaved)
         if (delta > 0) {
-          const today = new Date().toISOString().slice(0, 10)
+          const today = toIsoDate(new Date())
           setSavingsContributions((prev) => [
             { id: `sav-user-${Date.now()}`, amount: delta, date: today, destination: `goal-${goalId}`, label: 'Adjustment' },
             ...prev,
@@ -479,7 +486,7 @@ export function useFinanceState() {
       const safe = roundMoney(Math.max(0, amount))
       if (safe <= 0) return
       // P1-B: a deposit IS a contribution — progress follows the ledger.
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toIsoDate(new Date())
       if (isRemote) {
         const goal = remoteData?.goals.find((g) => g.id === goalId)
         updateRemote((s) => ({
@@ -522,10 +529,13 @@ export function useFinanceState() {
   const addSubscription = useCallback(
     (sub) => {
       if (isRemote) {
-        const optimistic = (s) => ({ ...s, subscriptions: [...s.subscriptions, { ...sub, id: `temp-${Date.now()}` }] })
+        const tempId = `temp-${Date.now()}`
+        const optimistic = (s) => ({ ...s, subscriptions: [...s.subscriptions, { ...sub, id: tempId }] })
         updateRemote(optimistic)
         mutateRemote('saving', () => remote.insertSubscription(remoteUser.id, sub), optimistic).then((data) => {
-          if (data && data.id) updateRemote((s) => ({ ...s, subscriptions: s.subscriptions.map((x) => (x.id.startsWith('temp-') && x.name === sub.name ? data : x)) }))
+          // Appended optimistic rows are reconciled in place (server orders by
+          // created_at, matching the append) by exact temp id.
+          if (data && data.id) updateRemote((s) => ({ ...s, subscriptions: s.subscriptions.map((x) => (x.id === tempId ? data : x)) }))
           if (data) logRemoteActivity('subscription', `Subscription added — ${sub.name}`, data.id)
         })
         return
@@ -573,10 +583,11 @@ export function useFinanceState() {
   const addAccount = useCallback(
     (account) => {
       if (isRemote) {
-        const optimistic = (s) => ({ ...s, accounts: [...s.accounts, { ...account, id: `temp-${Date.now()}` }] })
+        const tempId = `temp-${Date.now()}`
+        const optimistic = (s) => ({ ...s, accounts: [...s.accounts, { ...account, id: tempId }] })
         updateRemote(optimistic)
         mutateRemote('saving', () => remote.insertAccount(remoteUser.id, account), optimistic).then((data) => {
-          if (data && data.id) updateRemote((s) => ({ ...s, accounts: s.accounts.map((a) => (a.id.startsWith('temp-') && a.name === account.name ? data : a)) }))
+          if (data && data.id) updateRemote((s) => ({ ...s, accounts: s.accounts.map((a) => (a.id === tempId ? data : a)) }))
           if (data) logRemoteActivity('account', `Account added — ${account.name}`, data.id)
         })
         return
@@ -648,10 +659,11 @@ export function useFinanceState() {
   const addPlannedExpense = useCallback(
     (planned) => {
       if (isRemote) {
-        const optimistic = (s) => ({ ...s, plannedExpenses: [...s.plannedExpenses, { ...planned, id: `temp-${Date.now()}` }] })
+        const tempId = `temp-${Date.now()}`
+        const optimistic = (s) => ({ ...s, plannedExpenses: [...s.plannedExpenses, { ...planned, id: tempId }] })
         updateRemote(optimistic)
         mutateRemote('saving', () => remote.insertPlanned(remoteUser.id, planned), optimistic).then((data) => {
-          if (data && data.id) updateRemote((s) => ({ ...s, plannedExpenses: s.plannedExpenses.map((p) => (p.id.startsWith('temp-') && p.name === planned.name ? data : p)) }))
+          if (data && data.id) updateRemote((s) => ({ ...s, plannedExpenses: s.plannedExpenses.map((p) => (p.id === tempId ? data : p)) }))
           if (data) logRemoteActivity('planned', `Planned expense — ${planned.name}`, data.id)
         })
         return
@@ -700,15 +712,19 @@ export function useFinanceState() {
       if (isRemote) {
         const target = remoteData?.plannedExpenses.find((p) => p.id === plannedId)
         if (!target) return
-        const today = new Date().toISOString().slice(0, 10)
+        const today = toIsoDate(new Date())
         const prevSnapshot = remoteData
+        const expenseToInsert = { name: target.name, amount: target.amount, category: target.category, date: today, accountId: target.accountId ?? null }
+        // Pure updater: no Date.now() inside (StrictMode double-invokes
+        // updaters in dev; an impure one would mint two different temp ids).
+        const tempId = `temp-${Date.now()}`
         updateRemote((s) => ({
           ...s,
-          expenses: [{ id: `temp-${Date.now()}`, name: target.name, amount: target.amount, category: target.category, date: today, accountId: target.accountId ?? null }, ...s.expenses],
+          expenses: [{ id: tempId, ...expenseToInsert }, ...s.expenses],
           plannedExpenses: s.plannedExpenses.filter((p) => p.id !== plannedId),
         }))
         ;(async () => {
-          const inserted = await remote.insertExpense(remoteUser.id, { name: target.name, amount: target.amount, category: target.category, date: today, accountId: target.accountId ?? null })
+          const inserted = await remote.insertExpense(remoteUser.id, expenseToInsert)
           if (inserted.error) {
             setRemoteData(prevSnapshot)
             setRemoteStatus({ saving: false, error: inserted.error })
@@ -720,23 +736,25 @@ export function useFinanceState() {
             setRemoteStatus({ saving: false, error: removed.error })
             return
           }
+          // Reconcile with the server: pull the real row id and ordering so
+          // the optimistic temp row is replaced by the persisted truth.
+          await loadRemote()
           logRemoteActivity('planned', `Paid planned expense — ${target.name}`)
           setRemoteStatus({ saving: false, error: '' })
         })()
         return
       }
-      setPlannedExpenses((prev) => {
-        const target = prev.find((p) => p.id === plannedId)
-        if (!target) return prev
-        setExpenses((current) => [
-          { id: `exp-user-${Date.now()}`, name: target.name, amount: target.amount, category: target.category, date: new Date().toISOString().slice(0, 10) },
-          ...current,
-        ])
-        logActivity('planned', `Paid planned expense — ${target.name}`, formatDetail(target.amount), 'accent')
-        return prev.filter((p) => p.id !== plannedId)
-      })
+      // Both updates live at the callback top level with pure updaters —
+      // calling setExpenses inside a setPlannedExpenses updater would run
+      // twice under StrictMode and double-insert the expense.
+      const target = plannedExpenses.find((p) => p.id === plannedId)
+      if (!target) return
+      const expenseRow = { id: `exp-user-${Date.now()}`, name: target.name, amount: target.amount, category: target.category, date: toIsoDate(new Date()) }
+      setExpenses((current) => [expenseRow, ...current])
+      logActivity('planned', `Paid planned expense — ${target.name}`, formatDetail(target.amount), 'accent')
+      setPlannedExpenses((prev) => prev.filter((p) => p.id !== plannedId))
     },
-    [isRemote, remoteUser, remoteData, updateRemote, logRemoteActivity, setRemoteStatus, setPlannedExpenses, setExpenses, logActivity],
+    [isRemote, remoteUser, remoteData, plannedExpenses, updateRemote, loadRemote, logRemoteActivity, setRemoteStatus, setPlannedExpenses, setExpenses, logActivity],
   )
 
   /** Demo reset is local-only by definition; it never touches remote data. */

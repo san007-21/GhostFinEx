@@ -3,9 +3,10 @@ import { Button } from './ui/Primitives.jsx'
 import { IconGhost, IconSend, IconX } from './ui/icons.jsx'
 import { formatCurrency } from '../lib/format'
 import { buildInsights } from '../lib/insights'
-import { expensesInMonth, monthlyNet, roundMoney, subscriptionBurden, affordabilityAnalysis } from '../lib/finance'
+import { expensesInMonth, goalStats, monthlyNet, roundMoney, subscriptionBurden, affordabilityAnalysis } from '../lib/finance'
 import { classifyIntent } from '../lib/webIntent'
 import { searchWeb } from '../lib/webSearch'
+import { askGhost } from '../lib/ghostAi'
 import { priceSignal, describePriceSignal, domainOf } from '../lib/priceSignals'
 import { stashPriceSuggestion } from '../lib/priceHandoff'
 import { useAuth } from '../auth/useAuth.js'
@@ -68,10 +69,18 @@ export default function GhostAssistant({ open, onClose, finance, onNavigate }) {
     if (q.includes('goal')) {
       if (goals.length === 0) return 'No goals yet — the Goals view can create one in a few taps.'
       const goal = goals.find((g) => q.includes(g.name.toLowerCase().split(' ')[0])) ?? goals[0]
-      const gap = Math.max(0, goal.target - goal.saved)
-      const weeks = Math.max(1, Math.ceil((new Date(goal.targetDate) - new Date()) / (7 * 24 * 60 * 60 * 1000)))
-      const need = roundMoney(gap / weeks)
-      return `"${goal.name}" is ${Math.round((goal.saved / goal.target) * 100)}% funded: ${formatCurrency(goal.saved, { compact: true })} of ${formatCurrency(goal.target, { compact: true })}. To land on time, about ${formatCurrency(need, { compact: true })} per week for ${weeks} weeks. If that is too steep, pushing the target date is a valid option.`
+      // Canonical progress math (goalStats): one definition of weeks-left and
+      // percent-funded, shared with the Goals view — no NaN when a goal has
+      // no target date or a zero target.
+      const stats = goalStats(goal)
+      if (stats.isComplete) {
+        return `"${goal.name}" is fully funded: ${formatCurrency(goal.saved, { compact: true })} of ${formatCurrency(goal.target, { compact: true })}. Time to set the next target.`
+      }
+      const percent = goal.target > 0 ? Math.round((goal.saved / goal.target) * 100) : 0
+      const weeklyLine = stats.weeksLeft > 0 && stats.weeklyNeeded > 0
+        ? ` To land on time, about ${formatCurrency(stats.weeklyNeeded, { compact: true })} per week for ${stats.weeksLeft} ${stats.weeksLeft === 1 ? 'week' : 'weeks'}. If that is too steep, pushing the target date is a valid option.`
+        : ' No target date set yet — add one in the Goals view and I can pace it for you.'
+      return `"${goal.name}" is ${percent}% funded: ${formatCurrency(goal.saved, { compact: true })} of ${formatCurrency(goal.target, { compact: true })}.${weeklyLine}`
     }
     if (q.includes('afford')) {
       const net = monthlyNet(profile.monthlyIncome, profile.monthlyBudget)
@@ -99,15 +108,30 @@ export default function GhostAssistant({ open, onClose, finance, onNavigate }) {
     // provider — personal and knowledge questions never leave the app.
     const intent = classifyIntent(question)
     if (intent.type === 'knowledge') {
-      // Stable-concept question: the RAG knowledge library is not wired into
-      // the runtime yet — Ghost says so instead of improvising.
-      setTimeout(() => {
+      // Knowledge questions route through the real RAG pipeline (rag-embed →
+      // match_financial_knowledge → ghost-ai). Ghost answers only from what
+      // the library retrieves and says so; on any failure it degrades to an
+      // honest fallback instead of improvising an answer.
+      setWebBusy(true)
+      const { data, error } = await askGhost(question)
+      setWebBusy(false)
+      if (error || !data) {
         setMessages((prev) => [...prev, {
           id: `a-${Date.now()}`,
           role: 'ghost',
-          text: 'That is a knowledge question, and my full financial-education library is not connected in this build yet — I won\'t improvise an answer. The Learning hub covers the basics (budgeting, emergency funds, compounding) in the meantime.',
+          text: `That is a knowledge question, and my financial-education library isn't reachable right now. I won't improvise an answer. The Learning hub covers the basics (budgeting, emergency funds, compounding) in the meantime.`,
         }])
-      }, 220)
+        return
+      }
+      const sourceLine = data.sources.length > 0
+        ? `\n\nGrounded in the knowledge library: ${data.sources.slice(0, 2).map((s) => s.title).join(' · ')}.`
+        : ''
+      setMessages((prev) => [...prev, {
+        id: `a-${Date.now()}`,
+        role: 'ghost',
+        kind: 'knowledge',
+        text: `${data.answer}${sourceLine}\n\nEducational background, not personal advice — and never a calculation of your money. Your own numbers are computed in the app, not by AI.`,
+      }])
       return
     }
     if (intent.needsWeb) {
@@ -178,7 +202,7 @@ export default function GhostAssistant({ open, onClose, finance, onNavigate }) {
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="Ghost assistant">
       <button type="button" aria-label="Close assistant" className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="gfx-enter absolute inset-x-0 bottom-0 top-auto flex max-h-[85vh] flex-col rounded-t-2xl border-t border-[var(--gfx-border-strong)] bg-[var(--gfx-surface)] shadow-[var(--gfx-shadow-lg)] sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-96 sm:rounded-l-2xl sm:rounded-tr-none sm:border-l sm:border-t-0">
+      <div className="glass gfx-enter absolute inset-x-0 bottom-0 top-auto flex max-h-[85vh] flex-col rounded-t-2xl shadow-[var(--gfx-shadow-lg)] sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-96 sm:rounded-l-2xl sm:rounded-tr-none sm:border-l sm:border-t-0">
         <header className="flex items-center justify-between border-b border-[var(--gfx-border)] px-4 py-3">
           <div className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--gfx-accent-soft)] text-[var(--gfx-accent)]">
@@ -208,6 +232,13 @@ export default function GhostAssistant({ open, onClose, finance, onNavigate }) {
               </p>
             </div>
           )}
+          {webBusy && (
+            <div className="flex justify-start">
+              <div aria-live="polite" className="rounded-2xl border border-[var(--gfx-border)] bg-[var(--gfx-surface-2)] px-3.5 py-2.5 text-sm text-[var(--gfx-muted)]">
+                Ghost is thinking…
+              </div>
+            </div>
+          )}
           {messages.map((message) => (
             <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
               <div
@@ -220,6 +251,11 @@ export default function GhostAssistant({ open, onClose, finance, onNavigate }) {
                 {message.kind === 'web' && (
                   <span className="mb-1.5 inline-block rounded-full border border-[rgba(96,165,250,0.35)] bg-[var(--gfx-info-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--gfx-info)]">
                     Current web research
+                  </span>
+                )}
+                {message.kind === 'knowledge' && (
+                  <span className="mb-1.5 inline-block rounded-full border border-[rgba(167,139,250,0.35)] bg-[var(--gfx-violet-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--gfx-violet)]">
+                    From the knowledge library
                   </span>
                 )}
                 {message.text}

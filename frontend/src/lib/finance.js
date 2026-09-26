@@ -302,6 +302,15 @@ export function savingsOverview({ contributions, goals, net, leftoverCash }, ref
 
 /* ------------------------------ what-if simulation ------------------------ */
 
+/** 'YYYY-MM-DD' for today in LOCAL calendar parts — toIsoDate here avoids a
+ * UTC/local mismatch with expensesInMonth (see parseIsoDay). */
+function todayIsoLocal() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
 /**
  * Apply a what-if scenario to the user's real financial state WITHOUT
  * mutating it. Returns a full derived overview for the hypothetical state.
@@ -317,7 +326,7 @@ export function simulateScenario(state, scenario) {
   if (scenario.type === 'purchase' && scenario.price > 0) {
     const priceSafe = roundMoney(scenario.price)
     simExpenses = [
-      { id: 'sim-purchase', name: scenario.name || 'Hypothetical purchase', amount: priceSafe, category: 'Shopping', date: new Date().toISOString().slice(0, 10) },
+      { id: 'sim-purchase', name: scenario.name || 'Hypothetical purchase', amount: priceSafe, category: 'Shopping', date: todayIsoLocal() },
       ...expenses,
     ]
     // Buying now means paying now: the simulated balance drops by the price.
@@ -328,7 +337,7 @@ export function simulateScenario(state, scenario) {
 
   if (scenario.type === 'expense' && scenario.amount > 0) {
     simExpenses = [
-      { id: 'sim-expense', name: scenario.name || 'Hypothetical recurring expense', amount: roundMoney(scenario.amount), category: scenario.category || 'Other', date: new Date().toISOString().slice(0, 10) },
+      { id: 'sim-expense', name: scenario.name || 'Hypothetical recurring expense', amount: roundMoney(scenario.amount), category: scenario.category || 'Other', date: todayIsoLocal() },
       ...expenses,
     ]
     effects.push(`Adds ${roundMoney(scenario.amount)} of spending in ${scenario.category || 'Other'}`)

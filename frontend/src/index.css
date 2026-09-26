@@ -67,6 +67,55 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Ambient depth layer behind the glass surfaces — two very quiet light
+ * sources, fixed so panels blur over them while scrolling. Deliberately
+ * faint (≤7% alpha): premium calm, not a light show. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 85% -10%, rgba(16, 185, 129, 0.07), transparent 60%),
+    radial-gradient(50rem 36rem at -10% 30%, rgba(96, 165, 250, 0.055), transparent 60%),
+    radial-gradient(44rem 30rem at 50% 115%, rgba(167, 139, 250, 0.045), transparent 60%);
+}
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Glass surface primitive: translucent panel over the ambient layer, with a
+ * crisp top highlight and a real backdrop blur where the browser supports it.
+ * Fallback (no backdrop-filter) is a near-opaque surface — fully readable. */
+.glass {
+  background: color-mix(in srgb, var(--gfx-surface) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gfx-border-strong) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    var(--gfx-shadow-md);
+}
+@supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
+  .glass {
+    -webkit-backdrop-filter: blur(12px) saturate(1.15);
+    backdrop-filter: blur(12px) saturate(1.15);
+  }
+}
+
+/* Softer variant for large chrome (sidebar, top bar): lighter blur, no
+ * heavy shadow, so long scrolling stays calm. */
+.glass-soft {
+  background: color-mix(in srgb, var(--gfx-surface) 72%, transparent);
+  border-color: color-mix(in srgb, var(--gfx-border) 60%, transparent);
+}
+@supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
+  .glass-soft {
+    -webkit-backdrop-filter: blur(10px) saturate(1.1);
+    backdrop-filter: blur(10px) saturate(1.1);
+  }
+}
+
 ::selection {
   background: rgba(52, 211, 153, 0.3);
 }
@@ -136,6 +185,19 @@ body {
   100% {
     transform: translateX(100%);
   }
+}
+
+/* Ghost Camera scanline: a slow vertical sweep over the capture frame and
+ * processing preview. Deliberately quiet; respects reduced-motion below. */
+.gfx-scanline {
+  animation: gfx-scan 2.4s var(--gfx-ease) infinite;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+}
+@keyframes gfx-scan {
+  0% { transform: translateY(-4rem); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(4rem); opacity: 0; }
 }
 
 /* Entrance for views, dialogs, popovers */

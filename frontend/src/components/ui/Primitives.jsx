@@ -180,7 +180,7 @@ export function StatCard({ label, value, sub, tone = 'default' }) {
     info: 'text-[var(--gfx-info)]',
   }
   return (
-    <div className="rounded-xl border border-[var(--gfx-border)] bg-[var(--gfx-surface)] p-4 transition-colors hover:border-[var(--gfx-border-strong)]">
+    <div className="glass rounded-xl p-4 transition-shadow hover:shadow-[var(--gfx-shadow-md)]">
       <p className="text-xs font-medium uppercase tracking-wide text-[var(--gfx-muted)]">{label}</p>
       <p className={`tabular mt-1 text-2xl font-semibold ${tones[tone]}`}>{value}</p>
       {sub && <p className="mt-0.5 text-xs text-[var(--gfx-faint)]">{sub}</p>}

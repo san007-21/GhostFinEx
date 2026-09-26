@@ -10,6 +10,7 @@ import { formatCurrency } from './format'
 import {
   expensesByCategory,
   expensesInMonth,
+  goalStats,
   roundMoney,
   subscriptionBurden,
 } from './finance'
@@ -83,17 +84,18 @@ export function buildInsights({ profile, expenses, goals, subscriptions, overvie
     )
   }
 
-  /* Goals needing attention */
+  /* Goals needing attention (canonical weeks/percent math via goalStats) */
   for (const goal of goals) {
     if (goal.saved >= goal.target) continue
+    const stats = goalStats(goal)
     const gap = roundMoney(goal.target - goal.saved)
-    const weeks = Math.max(1, Math.ceil((new Date(goal.targetDate) - new Date()) / (7 * 24 * 60 * 60 * 1000)))
-    const weekly = roundMoney(gap / weeks)
-    if (weekly * 4.33 > Math.max(overview.monthlyIncome - overview.monthSpent, 0)) {
+    const weeks = stats.weeksLeft
+    const weekly = stats.weeklyNeeded
+    if (weeks > 0 && weekly * 4.33 > Math.max(overview.monthlyIncome - overview.monthSpent, 0)) {
       push(
         'info',
         `"${goal.name}" needs ${formatCurrency(weekly, { compact: true })} per week`,
-        `${formatCurrency(gap, { compact: true })} to go in ${weeks} weeks. If that weekly number is out of reach, moving the target date is a valid choice.`,
+        `${formatCurrency(gap, { compact: true })} to go in ${weeks} ${weeks === 1 ? 'week' : 'weeks'}. If that weekly number is out of reach, moving the target date is a valid choice.`,
         '/goals',
         'goal',
       )

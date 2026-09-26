@@ -14,7 +14,7 @@ export default function TopBar({ activeId, onOpenMenu, onOpenGhost, onReset, isR
   const active = NAV_ITEMS.find((item) => item.id === activeId)
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[var(--gfx-border)] bg-[var(--gfx-bg)]/85 backdrop-blur">
+    <header className="glass-soft sticky top-0 z-30 border-b border-[var(--gfx-border)]">
       <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
         <button
           type="button"

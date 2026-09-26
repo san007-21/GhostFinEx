@@ -24,3 +24,6 @@ Thumbs.db
 supabase/functions/.env
 frontend/supabase/functions/.env
 backend/.env
+
+# Supabase CLI local state
+supabase/.temp/

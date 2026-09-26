@@ -229,3 +229,12 @@ export function IconSend(props) {
     </Icon>
   )
 }
+
+export function IconScan(props) {
+  return (
+    <Icon {...props}>
+      <path d="M2.5 5.5v-2a1 1 0 0 1 1-1h2M10.5 2.5h2a1 1 0 0 1 1 1v2M13.5 10.5v2a1 1 0 0 1-1 1h-2M5.5 13.5h-2a1 1 0 0 1-1-1v-2" />
+      <path d="M2.5 8h11" />
+    </Icon>
+  )
+}

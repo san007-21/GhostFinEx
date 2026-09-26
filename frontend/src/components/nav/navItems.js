@@ -1,7 +1,8 @@
 /**
  * navItems.js — single source of truth for app navigation.
- * View components are referenced directly (no router needed for this phase);
- * ids double as hash values so browser back/forward works.
+ * Views are referenced as lazy `load` functions (route-level code splitting:
+ * each view ships as its own chunk and loads on first navigation). Ids double
+ * as hash values so browser back/forward works.
  */
 import {
   IconBook,
@@ -20,36 +21,21 @@ import {
   IconWallet,
 } from '../ui/icons.jsx'
 
-import DashboardView from '../../views/DashboardView.jsx'
-import OverviewView from '../../views/OverviewView.jsx'
-import ExpensesView from '../../views/ExpensesView.jsx'
-import SpendingView from '../../views/SpendingView.jsx'
-import GoalsView from '../../views/GoalsView.jsx'
-import SavingsView from '../../views/SavingsView.jsx'
-import AccountsView from '../../views/AccountsView.jsx'
-import SubscriptionsView from '../../views/SubscriptionsView.jsx'
-import AffordView from '../../views/AffordView.jsx'
-import WhatIfView from '../../views/WhatIfView.jsx'
-import ShoppingView from '../../views/ShoppingView.jsx'
-import CalendarView from '../../views/CalendarView.jsx'
-import LearnView from '../../views/LearnView.jsx'
-import AuthView from '../../views/AuthView.jsx'
-
 export const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: IconHome, View: DashboardView, group: 'Money' },
-  { id: 'overview', label: 'Financial overview', icon: IconChart, View: OverviewView, group: 'Money' },
-  { id: 'expenses', label: 'Expenses', icon: IconWallet, View: ExpensesView, group: 'Money' },
-  { id: 'spending', label: 'Spending breakdown', icon: IconPie, View: SpendingView, group: 'Money' },
-  { id: 'accounts', label: 'Accounts', icon: IconWallet, View: AccountsView, group: 'Money' },
-  { id: 'goals', label: 'Savings goals', icon: IconTarget, View: GoalsView, group: 'Money' },
-  { id: 'savings', label: 'Savings', icon: IconPiggyBank, View: SavingsView, group: 'Money' },
-  { id: 'subscriptions', label: 'Subscriptions', icon: IconRepeat, View: SubscriptionsView, group: 'Money' },
-  { id: 'afford', label: 'Can I afford this?', icon: IconScale, View: AffordView, group: 'Decide' },
-  { id: 'whatif', label: 'What-if simulation', icon: IconSliders, View: WhatIfView, group: 'Decide' },
-  { id: 'shopping', label: 'Smart shopping', icon: IconTag, View: ShoppingView, group: 'Decide' },
-  { id: 'calendar', label: 'Financial calendar', icon: IconCalendar, View: CalendarView, group: 'Plan' },
-  { id: 'learn', label: 'Learning hub', icon: IconBook, View: LearnView, group: 'Plan' },
-  { id: 'account', label: 'Account', icon: IconUser, View: AuthView, group: 'Plan' },
+  { id: 'dashboard', label: 'Dashboard', icon: IconHome, load: () => import('../../views/DashboardView.jsx'), group: 'Money' },
+  { id: 'overview', label: 'Financial overview', icon: IconChart, load: () => import('../../views/OverviewView.jsx'), group: 'Money' },
+  { id: 'expenses', label: 'Expenses', icon: IconWallet, load: () => import('../../views/ExpensesView.jsx'), group: 'Money' },
+  { id: 'spending', label: 'Spending breakdown', icon: IconPie, load: () => import('../../views/SpendingView.jsx'), group: 'Money' },
+  { id: 'accounts', label: 'Accounts', icon: IconWallet, load: () => import('../../views/AccountsView.jsx'), group: 'Money' },
+  { id: 'goals', label: 'Savings goals', icon: IconTarget, load: () => import('../../views/GoalsView.jsx'), group: 'Money' },
+  { id: 'savings', label: 'Savings', icon: IconPiggyBank, load: () => import('../../views/SavingsView.jsx'), group: 'Money' },
+  { id: 'subscriptions', label: 'Subscriptions', icon: IconRepeat, load: () => import('../../views/SubscriptionsView.jsx'), group: 'Money' },
+  { id: 'afford', label: 'Can I afford this?', icon: IconScale, load: () => import('../../views/AffordView.jsx'), group: 'Decide' },
+  { id: 'whatif', label: 'What-if simulation', icon: IconSliders, load: () => import('../../views/WhatIfView.jsx'), group: 'Decide' },
+  { id: 'shopping', label: 'Smart shopping', icon: IconTag, load: () => import('../../views/ShoppingView.jsx'), group: 'Decide' },
+  { id: 'calendar', label: 'Financial calendar', icon: IconCalendar, load: () => import('../../views/CalendarView.jsx'), group: 'Plan' },
+  { id: 'learn', label: 'Learning hub', icon: IconBook, load: () => import('../../views/LearnView.jsx'), group: 'Plan' },
+  { id: 'account', label: 'Account', icon: IconUser, load: () => import('../../views/AuthView.jsx'), group: 'Plan' },
 ]
 
 /** Bottom-of-screen mobile slots: four key views + a "More" sheet. */
